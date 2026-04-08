@@ -1,12 +1,15 @@
 # PickLingo
 
-PickLingo is a macOS translation helper app built with SwiftUI. It detects selected text, performs translation with plugin-enabled services, and shows results in a lightweight desktop UI.
+PickLingo is a plugin-driven macOS productivity tool built with SwiftUI. It provides a lightweight desktop workflow where multiple capabilities (including translation) can be added and managed through plugins.
+
+中文说明请见：[README.zh-CN.md](./README.zh-CN.md)
 
 ## Features
 
 - SwiftUI-based macOS app (`PickLingo.app`)
-- Translation service abstraction with plugin support
-- Language detection and translation result modeling
+- Plugin-first architecture for multiple tool capabilities
+- Translation is one built-in capability, not the only one
+- Extensible services and domain models for future plugins
 - Settings, onboarding, and result/tooltip panels
 - Localized resources (`en`, `zh-Hans`)
 
@@ -17,7 +20,7 @@ PickLingo is a macOS translation helper app built with SwiftUI. It detects selec
 ├── PickLingo/                    # App source code
 │   ├── App/                      # App lifecycle and menu bar logic
 │   ├── UI/                       # SwiftUI views and panels
-│   ├── Services/                 # Translation, plugin, and helper services
+│   ├── Services/                 # Plugin, translation, and core helper services
 │   ├── Models/                   # Domain models and settings
 │   ├── Resources/                # Assets and localization resources
 │   ├── Info.plist
@@ -43,7 +46,7 @@ PickLingo is a macOS translation helper app built with SwiftUI. It detects selec
 ## Notes
 
 - User-specific Xcode files and build outputs are ignored via `.gitignore`.
-- Chinese documentation is available in `README.zh-CN.md`.
+- Chinese documentation: `README.zh-CN.md`.
 
 ## License
 
