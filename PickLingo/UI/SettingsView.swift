@@ -55,7 +55,7 @@ struct GeneralSettingsTab: View {
 
                 HStack {
                     Text(String(localized: "Tooltip delay"))
-                    Slider(value: $settings.tooltipDelay, in: 0.1...2.0, step: 0.1) {
+                    Slider(value: $settings.tooltipDelay, in: 0.0...2.0, step: 0.1) {
                         Text("Delay")
                     }
                     Text(String(format: "%.1fs", settings.tooltipDelay))

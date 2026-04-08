@@ -27,7 +27,7 @@ final class AccessibilityMonitor: ObservableObject {
     private var debounceWorkItem: DispatchWorkItem?
     private var debounceInterval: TimeInterval {
         // Reuse the user-facing tooltip delay setting as the debounce delay.
-        max(0.1, min(2.0, AppSettings.shared.tooltipDelay))
+        max(0.0, min(2.0, AppSettings.shared.tooltipDelay))
     }
     /// Minimum mouse movement (in points) to consider a new selection gesture for the same text.
     private static let positionThreshold: CGFloat = 5
@@ -155,7 +155,10 @@ final class AccessibilityMonitor: ObservableObject {
             return nil
         }
 
-        let element = focusedElement as! AXUIElement
+        guard CFGetTypeID(focusedElement) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        let element = unsafeBitCast(focusedElement, to: AXUIElement.self)
 
         var selectedTextRef: CFTypeRef?
         let textResult = AXUIElementCopyAttributeValue(
@@ -188,9 +191,14 @@ final class AccessibilityMonitor: ObservableObject {
         let dragDistance = sqrt(dx * dx + dy * dy)
         // Single click with nearly no movement is usually just caret placement.
         let isLikelySelectionGesture = dragDistance > Self.selectionGestureThreshold || clickCount >= 2
+        let isTextSelectionContext = isLikelyTextSelectionContext(pid: pid, at: mousePos)
 
         // First try AX API
         if let text = Self.getSelectedTextViaAX(pid: pid), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard isLikelySelectionGesture, isTextSelectionContext else {
+                clearSelection()
+                return
+            }
             handleDetectedText(text, at: mousePos)
             return
         }
@@ -198,7 +206,7 @@ final class AccessibilityMonitor: ObservableObject {
         // Fallback: simulate Cmd+C and read pasteboard
         // Only for apps where AX failed, and only when gesture likely selected text.
         if axFailedApps.contains(pid) {
-            guard isLikelySelectionGesture, isLikelyTextSelectionContext(pid: pid, at: mousePos) else {
+            guard isLikelySelectionGesture, isTextSelectionContext else {
                 clearSelection()
                 return
             }

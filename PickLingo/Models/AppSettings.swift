@@ -32,14 +32,14 @@ final class AppSettings: ObservableObject {
     @Published var isEnabled: Bool = true { didSet { persistIfNeeded() } }
     @Published var autoDetectLanguage: Bool = true { didSet { persistIfNeeded() } }
     @Published var defaultTargetLanguage: Language = .chinese { didSet { persistIfNeeded() } }
-    @Published var tooltipDelay: Double = 0.5 { didSet { persistIfNeeded() } }
+    @Published var tooltipDelay: Double = 0.0 { didSet { persistIfNeeded() } }
     @Published var apiBaseURL: String = "https://api.openai.com" { didSet { persistIfNeeded() } }
     @Published var apiModel: String = "gpt-4o-mini" { didSet { persistIfNeeded() } }
     @Published var apiKey: String = "" { didSet { persistIfNeeded() } }
     @Published var launchAtLogin: Bool = false { didSet { persistIfNeeded() } }
     @Published var streamingEnabled: Bool = true { didSet { persistIfNeeded() } }
     @Published var thinkModeEnabled: Bool = false { didSet { persistIfNeeded() } }
-    @Published var tooltipAutoDismissByDistanceEnabled: Bool = true { didSet { persistIfNeeded() } }
+    @Published var tooltipAutoDismissByDistanceEnabled: Bool = false { didSet { persistIfNeeded() } }
     @Published var tooltipDismissDistance: Double = 100 { didSet { persistIfNeeded() } }
     @Published var selectedModelProfileID: String = "" { didSet { persistIfNeeded() } }
 

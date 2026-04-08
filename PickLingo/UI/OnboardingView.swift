@@ -41,8 +41,6 @@ struct OnboardingView: View {
             if isGranted {
                 Button(String(localized: "Get Started")) {
                     onComplete()
-                    // Close this window
-                    NSApp.keyWindow?.close()
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)

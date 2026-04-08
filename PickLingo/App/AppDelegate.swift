@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var resultPanel: ResultPanelController?
     private var userInputPanel: UserInputPanelController?
     private var settingsWindow: NSWindow?
+    private var onboardingWindow: NSWindow?
     private var appSwitchObserver: Any?
 
     // Cached state for plugin execution
@@ -23,9 +24,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let granted = accessibilityMonitor.isAccessibilityGranted
         print("[PickLingo] Accessibility granted: \(granted)")
         if granted {
-            startMonitoring()
+            scheduleStartMonitoring()
         } else {
             showOnboarding()
+        }
+    }
+
+    private func scheduleStartMonitoring(delay: TimeInterval = 0.4) {
+        Task { @MainActor in
+            // TCC permission flips can be slightly delayed after user grants access.
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard self.accessibilityMonitor.isAccessibilityGranted else { return }
+            self.startMonitoring()
         }
     }
 
@@ -33,6 +43,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let enabled = AppSettings.shared.isEnabled
         print("[PickLingo] startMonitoring, isEnabled: \(enabled)")
         guard enabled else { return }
+
+        if let obs = appSwitchObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(obs)
+            appSwitchObserver = nil
+        }
 
         accessibilityMonitor.onTextSelected = { [weak self] text, origin in
             self?.showTooltip(for: text, at: origin)
@@ -195,9 +210,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showOnboarding() {
+        if let window = onboardingWindow {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
         let onboardingView = OnboardingView {
             if self.accessibilityMonitor.isAccessibilityGranted {
-                self.startMonitoring()
+                self.onboardingWindow?.close()
+                self.scheduleStartMonitoring()
             }
         }
         let window = NSWindow(
@@ -209,8 +231,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = String(localized: "Welcome to PickLingo")
         window.contentView = NSHostingView(rootView: onboardingView)
         window.center()
+        window.isReleasedWhenClosed = false
+        window.delegate = self
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        onboardingWindow = window
     }
 }
 
@@ -218,6 +243,9 @@ extension AppDelegate: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if (notification.object as? NSWindow) == settingsWindow {
             settingsWindow = nil
+        }
+        if (notification.object as? NSWindow) == onboardingWindow {
+            onboardingWindow = nil
         }
     }
 }
