@@ -1,0 +1,552 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+
+    },
+    "[Apple Translation requires macOS 15 Sequoia or later. Please use OpenAI API instead.]" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[Apple 翻译需要 macOS 15 Sequoia 或更高版本，请使用 OpenAI API。]"
+          }
+        }
+      }
+    },
+    "%@ (%@)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ (%2$@)"
+          }
+        }
+      }
+    },
+    "%lld." : {
+
+    },
+    "•" : {
+
+    },
+    "Add new plugin" : {
+
+    },
+    "After granting permission, this screen will update automatically." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授权后此页面会自动更新。"
+          }
+        }
+      }
+    },
+    "API Base URL" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 基础 URL"
+          }
+        }
+      }
+    },
+    "API Key" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 密钥"
+          }
+        }
+      }
+    },
+    "API key is not configured. Please set it in Settings." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API 密钥未配置，请在设置中填写。"
+          }
+        }
+      }
+    },
+    "Apple Translation" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 翻译"
+          }
+        }
+      }
+    },
+    "Apple Translation requires macOS 15 Sequoia or later." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 翻译需要 macOS 15 Sequoia 或更高版本。"
+          }
+        }
+      }
+    },
+    "Arabic" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阿拉伯语"
+          }
+        }
+      }
+    },
+    "Ask" : {
+
+    },
+    "Ask a question about this text..." : {
+
+    },
+    "Auto-detect source language" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动检测源语言"
+          }
+        }
+      }
+    },
+    "Cancel" : {
+
+    },
+    "Chinese" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中文"
+          }
+        }
+      }
+    },
+    "Choose which action buttons appear at the bottom of the result panel." : {
+
+    },
+    "Copy" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拷贝"
+          }
+        }
+      }
+    },
+    "Default target language" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认目标语言"
+          }
+        }
+      }
+    },
+    "Delay" : {
+
+    },
+    "Delete" : {
+
+    },
+    "Delete Plugin" : {
+
+    },
+    "Delete Plugin?" : {
+
+    },
+    "Disable Select-Translate" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "禁用划词翻译"
+          }
+        }
+      }
+    },
+    "Disable PickLingo" : {
+
+    },
+    "Enable Select-Translate" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用划词翻译"
+          }
+        }
+      }
+    },
+    "Enable PickLingo" : {
+
+    },
+    "Enable streaming output" : {
+
+    },
+    "Enable Think Mode" : {
+
+    },
+    "English" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "英语"
+          }
+        }
+      }
+    },
+    "Explain" : {
+
+    },
+    "French" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "法语"
+          }
+        }
+      }
+    },
+    "General" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通用"
+          }
+        }
+      }
+    },
+    "German" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "德语"
+          }
+        }
+      }
+    },
+    "Get Started" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始使用"
+          }
+        }
+      }
+    },
+    "Icon" : {
+
+    },
+    "Input placeholder" : {
+
+    },
+    "Insert" : {
+
+    },
+    "Invalid response from AI service." : {
+
+    },
+    "Invalid response from translation service." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译服务返回了无效的响应。"
+          }
+        }
+      }
+    },
+    "Japanese" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "日语"
+          }
+        }
+      }
+    },
+    "Korean" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "韩语"
+          }
+        }
+      }
+    },
+    "Model" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型"
+          }
+        }
+      }
+    },
+    "Name" : {
+
+    },
+    "Network error: %@" : {
+
+    },
+    "New Plugin" : {
+
+    },
+    "Open Accessibility Settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开辅助功能设置"
+          }
+        }
+      }
+    },
+    "OpenAI API" : {
+
+    },
+    "Permission Granted" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已授权"
+          }
+        }
+      }
+    },
+    "Pin panel" : {
+
+    },
+    "Placeholders:" : {
+
+    },
+    "Plugin name" : {
+
+    },
+    "Plugins" : {
+
+    },
+    "Polish" : {
+
+    },
+    "Portuguese" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "葡萄牙语"
+          }
+        }
+      }
+    },
+    "Processing…" : {
+
+    },
+    "Quit PickLingo" : {
+
+    },
+    "Quit PickLingo" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出 PickLingo"
+          }
+        }
+      }
+    },
+    "Rate limited. Please try again later." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请求频率超限，请稍后再试。"
+          }
+        }
+      }
+    },
+    "Replace" : {
+
+    },
+    "Requires user input" : {
+
+    },
+    "Reset All" : {
+
+    },
+    "Reset to Default" : {
+
+    },
+    "Result Actions" : {
+
+    },
+    "Russian" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "俄语"
+          }
+        }
+      }
+    },
+    "Select a plugin to edit" : {
+
+    },
+    "PickLingo" : {
+
+    },
+    "PickLingo needs Accessibility permission to detect text selection across apps." : {
+
+    },
+    "PickLingo Settings" : {
+
+    },
+    "PickLingo needs Accessibility permission to detect text selection across apps." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PickLingo 需要辅助功能权限来检测跨应用的文本选中。"
+          }
+        }
+      }
+    },
+    "PickLingo Settings" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PickLingo 设置"
+          }
+        }
+      }
+    },
+    "Settings…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置…"
+          }
+        }
+      }
+    },
+    "Show source/target language controls" : {
+
+    },
+    "Spanish" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "西班牙语"
+          }
+        }
+      }
+    },
+    "Streaming & Think Mode" : {
+
+    },
+    "Summarize" : {
+
+    },
+    "System Prompt" : {
+
+    },
+    "Test Connection" : {
+
+    },
+    "Think Mode requires streaming to be enabled." : {
+
+    },
+    "Thinking…" : {
+
+    },
+    "This plugin will be permanently removed." : {
+
+    },
+    "Tooltip delay" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提示延迟"
+          }
+        }
+      }
+    },
+    "Translate" : {
+
+    },
+    "Translating…" : {
+
+    },
+    "Translation Engine" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译引擎"
+          }
+        }
+      }
+    },
+    "Type your question..." : {
+
+    },
+    "Unpin panel" : {
+
+    },
+    "Welcome to PickLingo" : {
+
+    },
+    "Welcome to PickLingo" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "欢迎使用 PickLingo"
+          }
+        }
+      }
+    },
+    "When enabled, source and target language selectors appear in the result panel header." : {
+
+    }
+  },
+  "version" : "1.0"
+}
