@@ -190,12 +190,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         pendingSelectedText = selectedText
         pendingOrigin = origin
+        let sourceAppPID = lastActiveAppPID != 0
+            ? lastActiveAppPID
+            : (NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0)
 
         resultPanel?.show(
             for: selectedText,
             plugin: plugin,
             userInput: userInput,
             thinkModeOverride: thinkModeOverride,
+            sourceAppPID: sourceAppPID,
             at: origin
         )
     }

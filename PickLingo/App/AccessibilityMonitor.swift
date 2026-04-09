@@ -10,6 +10,7 @@ final class AccessibilityMonitor: ObservableObject {
     private var pollTimer: Timer?
     private var mouseUpMonitor: Any?
     private var mouseDownMonitor: Any?
+    private var keyDownMonitor: Any?
     private var isMouseButtonDown = false
     private var mouseDownPosition: NSPoint = .zero
     private var lastSelection: String = ""
@@ -83,6 +84,13 @@ final class AccessibilityMonitor: ObservableObject {
             }
         }
 
+        // Dismiss selection-driven UI immediately when user starts typing over selection.
+        keyDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleGlobalKeyDown(event)
+            }
+        }
+
         print("[PickLingo] Monitoring started (AX polling + mouse-up global monitor)")
     }
 
@@ -96,6 +104,10 @@ final class AccessibilityMonitor: ObservableObject {
         if let monitor = mouseUpMonitor {
             NSEvent.removeMonitor(monitor)
             mouseUpMonitor = nil
+        }
+        if let monitor = keyDownMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyDownMonitor = nil
         }
         isMouseButtonDown = false
         lastSelection = ""
@@ -332,5 +344,18 @@ final class AccessibilityMonitor: ObservableObject {
             selectedText = ""
             onSelectionCleared?()
         }
+    }
+
+    private func handleGlobalKeyDown(_ event: NSEvent) {
+        guard !lastSelection.isEmpty else { return }
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
+        if frontApp.processIdentifier == ProcessInfo.processInfo.processIdentifier { return }
+
+        // Only treat likely text-editing key presses as selection-clearing actions.
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let hasBlockingModifiers = flags.contains(.command) || flags.contains(.control) || flags.contains(.option)
+        guard !hasBlockingModifiers else { return }
+
+        clearSelection()
     }
 }

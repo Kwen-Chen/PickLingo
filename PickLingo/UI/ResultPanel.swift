@@ -34,6 +34,7 @@ final class ResultPanelController: NSObject, NSWindowDelegate {
         plugin: Plugin,
         userInput: String? = nil,
         thinkModeOverride: Bool? = nil,
+        sourceAppPID: pid_t = 0,
         at origin: NSPoint
     ) {
         // Cancel any existing stream but don't animate out
@@ -110,7 +111,13 @@ final class ResultPanelController: NSObject, NSWindowDelegate {
             hostingView = hv
         }
 
-        viewModel.execute(text: text, plugin: plugin, userInput: userInput, thinkModeOverride: thinkModeOverride)
+        viewModel.execute(
+            text: text,
+            plugin: plugin,
+            userInput: userInput,
+            thinkModeOverride: thinkModeOverride,
+            sourceAppPID: sourceAppPID
+        )
     }
 
     func applyCurrentTheme() {
@@ -224,12 +231,20 @@ final class ResultViewModel: ObservableObject {
     private var currentStreamTask: Task<Void, Never>?
     private var latestAnswerText: String = ""
     private var pendingFollowUpDisplayPrefix: String?
+    private var sourceAppPID: pid_t = 0
 
-    func execute(text: String, plugin: Plugin, userInput: String? = nil, thinkModeOverride: Bool? = nil) {
+    func execute(
+        text: String,
+        plugin: Plugin,
+        userInput: String? = nil,
+        thinkModeOverride: Bool? = nil,
+        sourceAppPID: pid_t = 0
+    ) {
         sourceText = text
         currentPlugin = plugin
         userInputText = userInput ?? ""
         self.thinkModeOverride = thinkModeOverride
+        self.sourceAppPID = sourceAppPID
         latestAnswerText = ""
         pendingFollowUpDisplayPrefix = nil
 
@@ -353,32 +368,41 @@ final class ResultViewModel: ObservableObject {
     func copyResult() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(resultText, forType: .string)
+        dismiss()
     }
 
     func insertResult() {
+        pasteTextToSourceApp(sourceText + "\n" + resultText)
+        dismiss()
+    }
+
+    func replaceResult() {
+        pasteTextToSourceApp(resultText)
+        dismiss()
+    }
+
+    private func pasteTextToSourceApp(_ text: String) {
         let prev = NSPasteboard.general.string(forType: .string)
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(sourceText + "\n" + resultText, forType: .string)
-        simulatePaste()
+        NSPasteboard.general.setString(text, forType: .string)
+
+        activateSourceAppIfNeeded()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+            self?.simulatePaste()
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            NSPasteboard.general.clearContents()
             if let prev {
-                NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(prev, forType: .string)
             }
         }
     }
 
-    func replaceResult() {
-        let prev = NSPasteboard.general.string(forType: .string)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(resultText, forType: .string)
-        simulatePaste()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            if let prev {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(prev, forType: .string)
-            }
-        }
+    private func activateSourceAppIfNeeded() {
+        guard sourceAppPID != 0,
+              let app = NSRunningApplication(processIdentifier: sourceAppPID) else { return }
+        app.activate(options: [])
     }
 
     func regenerateResult() {
