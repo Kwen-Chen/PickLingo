@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import Combine
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -11,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var onboardingWindow: NSWindow?
     private var appSwitchObserver: Any?
+    private var themeCancellable: AnyCancellable?
 
     // Cached state for plugin execution
     private var pendingSelectedText: String = ""
@@ -20,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[PickLingo] App launched")
         menuBarController.setup()
+        bindThemeUpdates()
 
         let granted = accessibilityMonitor.isAccessibilityGranted
         print("[PickLingo] Accessibility granted: \(granted)")
@@ -53,6 +56,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showTooltip(for: text, at: origin)
         }
         accessibilityMonitor.onSelectionCleared = { [weak self] in
+            let ownPID = ProcessInfo.processInfo.processIdentifier
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier == ownPID {
+                return
+            }
             self?.hideAll()
         }
         accessibilityMonitor.startMonitoring()
@@ -111,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if tooltipPanel == nil {
             tooltipPanel = TooltipPanel()
         }
+        tooltipPanel?.applyCurrentTheme()
 
         tooltipPanel?.onPluginSelected = { [weak self] plugin in
             self?.handlePluginSelected(plugin)
@@ -146,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if userInputPanel == nil {
             userInputPanel = UserInputPanelController()
         }
+        userInputPanel?.applyCurrentTheme()
 
         userInputPanel?.onSubmit = { [weak self] userInput, thinkModeOverride in
             self?.executePlugin(plugin, userInput: userInput, thinkModeOverride: thinkModeOverride)
@@ -158,16 +167,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func executePlugin(_ plugin: Plugin, userInput: String?, thinkModeOverride: Bool?) {
+        executePlugin(
+            plugin,
+            selectedText: pendingSelectedText,
+            userInput: userInput,
+            thinkModeOverride: thinkModeOverride,
+            origin: pendingOrigin
+        )
+    }
+
+    private func executePlugin(
+        _ plugin: Plugin,
+        selectedText: String,
+        userInput: String?,
+        thinkModeOverride: Bool?,
+        origin: NSPoint
+    ) {
         if resultPanel == nil {
             resultPanel = ResultPanelController()
         }
+        resultPanel?.applyCurrentTheme()
+
+        pendingSelectedText = selectedText
+        pendingOrigin = origin
 
         resultPanel?.show(
-            for: pendingSelectedText,
+            for: selectedText,
             plugin: plugin,
             userInput: userInput,
             thinkModeOverride: thinkModeOverride,
-            at: pendingOrigin
+            at: origin
         )
     }
 
@@ -186,31 +215,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openSettings() {
         if let window = settingsWindow {
+            window.appearance = AppSettings.shared.appTheme.nsAppearance
             window.makeKeyAndOrderFront(nil)
+            window.makeFirstResponder(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
         let settingsView = SettingsView()
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
-        window.title = String(localized: "PickLingo Settings")
-        window.minSize = NSSize(width: 520, height: 400)
+        window.title = UIString("PickLingo Settings")
+        window.minSize = NSSize(width: 640, height: 420)
+        window.appearance = AppSettings.shared.appTheme.nsAppearance
         window.contentView = NSHostingView(rootView: settingsView)
         window.center()
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(nil)
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow = window
     }
 
     private func showOnboarding() {
         if let window = onboardingWindow {
+            window.appearance = AppSettings.shared.appTheme.nsAppearance
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
@@ -229,6 +263,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         window.title = String(localized: "Welcome to PickLingo")
+        window.appearance = AppSettings.shared.appTheme.nsAppearance
         window.contentView = NSHostingView(rootView: onboardingView)
         window.center()
         window.isReleasedWhenClosed = false
@@ -236,6 +271,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         onboardingWindow = window
+    }
+
+    private func bindThemeUpdates() {
+        themeCancellable = AppSettings.shared.$appTheme
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.applyThemeToOpenWindows()
+            }
+    }
+
+    private func applyThemeToOpenWindows() {
+        let appearance = AppSettings.shared.appTheme.nsAppearance
+        settingsWindow?.appearance = appearance
+        onboardingWindow?.appearance = appearance
+        tooltipPanel?.applyCurrentTheme()
+        userInputPanel?.applyCurrentTheme()
+        resultPanel?.applyCurrentTheme()
     }
 }
 

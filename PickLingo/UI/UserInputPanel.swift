@@ -15,12 +15,13 @@ final class UserInputPanelController {
     var onSubmit: ((String, Bool?) -> Void)?
     var onCancel: (() -> Void)?
 
-    func show(plugin: Plugin, selectedText: String, at origin: NSPoint) {
+    func show(plugin: Plugin, selectedText: String, at origin: NSPoint, placeholderOverride: String? = nil) {
         dismiss()
 
         let inputView = UserInputView(
             plugin: plugin,
             selectedTextPreview: String(selectedText.prefix(100)),
+            placeholderOverride: placeholderOverride,
             onSubmit: { [weak self] text, thinkModeOverride in
                 self?.onSubmit?(text, thinkModeOverride)
                 self?.dismiss()
@@ -49,6 +50,7 @@ final class UserInputPanelController {
         panel.hidesOnDeactivate = false
         panel.animationBehavior = .utilityWindow
         panel.contentView = hostingView
+        panel.appearance = AppSettings.shared.appTheme.nsAppearance
 
         // Position below cursor
         let panelSize = NSSize(width: max(fittingSize.width, 320), height: max(fittingSize.height, 120))
@@ -79,6 +81,10 @@ final class UserInputPanelController {
         self.panel = panel
     }
 
+    func applyCurrentTheme() {
+        panel?.appearance = AppSettings.shared.appTheme.nsAppearance
+    }
+
     func dismiss() {
         guard let panel else { return }
         NSAnimationContext.runAnimationGroup({ ctx in
@@ -96,6 +102,7 @@ final class UserInputPanelController {
 struct UserInputView: View {
     let plugin: Plugin
     let selectedTextPreview: String
+    let placeholderOverride: String?
     let onSubmit: (String, Bool?) -> Void
     let onCancel: () -> Void
 
@@ -111,7 +118,7 @@ struct UserInputView: View {
                 Image(systemName: plugin.icon)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Text(plugin.name)
+                Text(plugin.uiDisplayName)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -135,7 +142,7 @@ struct UserInputView: View {
 
             // Input field
             HStack(spacing: 8) {
-                TextField(plugin.userInputPlaceholder ?? String(localized: "Type your question..."), text: $inputText)
+                TextField(placeholderText, text: $inputText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .focused($isFocused)
@@ -196,5 +203,15 @@ struct UserInputView: View {
         let globalThinkMode = AppSettings.shared.thinkModeEnabled
         let thinkModeOverride: Bool? = requestThinkModeEnabled == globalThinkMode ? nil : requestThinkModeEnabled
         onSubmit(trimmed, thinkModeOverride)
+    }
+
+    private var placeholderText: String {
+        if let placeholderOverride, !placeholderOverride.isEmpty {
+            return placeholderOverride
+        }
+        if let customPlaceholder = plugin.userInputPlaceholder, !customPlaceholder.isEmpty {
+            return customPlaceholder
+        }
+        return UIString("Type your question...")
     }
 }

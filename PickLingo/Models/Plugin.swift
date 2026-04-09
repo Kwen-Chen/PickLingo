@@ -5,12 +5,16 @@ import Foundation
 struct ActionOptions: OptionSet, Codable, Hashable {
     let rawValue: Int
 
-    static let copy    = ActionOptions(rawValue: 1 << 0)
-    static let insert  = ActionOptions(rawValue: 1 << 1)
-    static let replace = ActionOptions(rawValue: 1 << 2)
+    static let copy       = ActionOptions(rawValue: 1 << 0)
+    static let insert     = ActionOptions(rawValue: 1 << 1)
+    static let replace    = ActionOptions(rawValue: 1 << 2)
+    static let regenerate = ActionOptions(rawValue: 1 << 3)
+    static let followUp   = ActionOptions(rawValue: 1 << 4)
 
-    static let all: ActionOptions = [.copy, .insert, .replace]
-    static let copyOnly: ActionOptions = [.copy]
+    static let all: ActionOptions = [.copy, .insert, .replace, .regenerate, .followUp]
+    static let copyOnly: ActionOptions = [.copy, .regenerate, .followUp]
+    static let allWithoutFollowUp: ActionOptions = [.copy, .insert, .replace, .regenerate]
+    static let copyWithRegenerateOnly: ActionOptions = [.copy, .regenerate]
 }
 
 // MARK: - Plugin
@@ -98,7 +102,7 @@ extension Plugin {
             needsUserInput: false,
             userInputPlaceholder: nil,
             builtInID: "translate",
-            enabledActions: .all,
+            enabledActions: .allWithoutFollowUp,
             showLanguageControls: true
         ),
         Plugin(
@@ -139,7 +143,7 @@ extension Plugin {
             needsUserInput: false,
             userInputPlaceholder: nil,
             builtInID: "polish",
-            enabledActions: .all,
+            enabledActions: .allWithoutFollowUp,
             showLanguageControls: false
         ),
         Plugin(
@@ -159,7 +163,7 @@ extension Plugin {
             needsUserInput: false,
             userInputPlaceholder: nil,
             builtInID: "summarize",
-            enabledActions: .copyOnly,
+            enabledActions: .copyWithRegenerateOnly,
             showLanguageControls: false
         ),
         Plugin(
@@ -194,5 +198,26 @@ extension Plugin {
     /// Whether this is the Translate plugin (needs special language handling).
     var isTranslatePlugin: Bool {
         builtInID == "translate"
+    }
+
+    var uiDisplayName: String {
+        guard isBuiltIn, let builtInID else { return name }
+        let defaults = Self.defaultNames(for: builtInID)
+        guard let englishDefault = defaults.first else { return name }
+        if defaults.contains(name) {
+            return UIString(englishDefault)
+        }
+        return name
+    }
+
+    private static func defaultNames(for builtInID: String) -> [String] {
+        switch builtInID {
+        case "translate": return ["Translate", "翻译"]
+        case "explain": return ["Explain", "解释"]
+        case "polish": return ["Polish", "润色"]
+        case "summarize": return ["Summarize", "总结"]
+        case "ask": return ["Ask", "提问"]
+        default: return []
+        }
     }
 }

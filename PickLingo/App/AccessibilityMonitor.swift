@@ -109,6 +109,7 @@ final class AccessibilityMonitor: ObservableObject {
 
     private func checkSelectionViaAX() {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
+        if frontApp.processIdentifier == ProcessInfo.processInfo.processIdentifier { return }
         guard AppSettings.shared.isAppEnabled(bundleID: frontApp.bundleIdentifier) else {
             clearSelection()
             return
@@ -180,6 +181,7 @@ final class AccessibilityMonitor: ObservableObject {
 
     private func checkSelectionAfterMouseUp(at mousePos: NSPoint, clickCount: Int) {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
+        if frontApp.processIdentifier == ProcessInfo.processInfo.processIdentifier { return }
         guard AppSettings.shared.isAppEnabled(bundleID: frontApp.bundleIdentifier) else {
             clearSelection()
             return

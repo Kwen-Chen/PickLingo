@@ -1,22 +1,24 @@
 import SwiftUI
 import ServiceManagement
 import AppKit
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     var body: some View {
         TabView {
             GeneralSettingsTab()
-                .tabItem { Label(String(localized: "General"), systemImage: "gear") }
+                .tabItem { Label(UIString("General"), systemImage: "gear") }
             PluginSettingsView()
-                .tabItem { Label(String(localized: "Plugins"), systemImage: "puzzlepiece") }
+                .tabItem { Label(UIString("Plugins"), systemImage: "puzzlepiece") }
         }
-        .frame(minWidth: 520, idealWidth: 640, minHeight: 400, idealHeight: 520)
+        .frame(minWidth: 640, idealWidth: 760, minHeight: 420, idealHeight: 560)
     }
 }
 
-private struct AppScopeItem: Identifiable {
+private struct BlacklistedAppItem: Identifiable {
     let id: String
     let name: String
+    let bundleID: String
 }
 
 // MARK: - General Settings (includes API config)
@@ -36,27 +38,39 @@ struct GeneralSettingsTab: View {
         Form {
             // Behavior
             Section {
-                Toggle(String(localized: "Enable PickLingo"), isOn: $settings.isEnabled)
+                Toggle(UIString("Enable PickLingo"), isOn: $settings.isEnabled)
 
-                Toggle(String(localized: "Auto-detect source language"), isOn: $settings.autoDetectLanguage)
+                Toggle(UIString("Auto-detect source language"), isOn: $settings.autoDetectLanguage)
 
-                Toggle(String(localized: "Launch at login"), isOn: $settings.launchAtLogin)
+                Toggle(UIString("Launch at login"), isOn: $settings.launchAtLogin)
                     .onChange(of: settings.launchAtLogin) { _, enabled in
                         updateLaunchAtLogin(enabled: enabled)
                     }
+
+                Picker(UIString("Interface language"), selection: $settings.interfaceLanguage) {
+                    Text(UIString("Follow System")).tag(InterfaceLanguage.system)
+                    Text("English").tag(InterfaceLanguage.english)
+                    Text(UIString("Simplified Chinese")).tag(InterfaceLanguage.simplifiedChinese)
+                }
+
+                Picker(UIString("Theme"), selection: $settings.appTheme) {
+                    Text(UIString("Follow System")).tag(AppTheme.system)
+                    Text(UIString("Light")).tag(AppTheme.light)
+                    Text(UIString("Dark")).tag(AppTheme.dark)
+                }
             }
 
             Section {
-                Picker(String(localized: "Default target language"), selection: $settings.defaultTargetLanguage) {
+                Picker(UIString("Default target language"), selection: $settings.defaultTargetLanguage) {
                     ForEach(Language.allCases) { lang in
-                        Text(lang.nativeName).tag(lang)
+                        Text(lang.uiName).tag(lang)
                     }
                 }
 
                 HStack {
-                    Text(String(localized: "Tooltip delay"))
+                    Text(UIString("Tooltip delay"))
                     Slider(value: $settings.tooltipDelay, in: 0.0...2.0, step: 0.1) {
-                        Text("Delay")
+                        Text(UIString("Delay"))
                     }
                     Text(String(format: "%.1fs", settings.tooltipDelay))
                         .font(.caption)
@@ -64,13 +78,13 @@ struct GeneralSettingsTab: View {
                         .frame(width: 30, alignment: .trailing)
                 }
 
-                Toggle(String(localized: "Auto-hide tooltip when mouse moves away"), isOn: $settings.tooltipAutoDismissByDistanceEnabled)
+                Toggle(UIString("Auto-hide tooltip when mouse moves away"), isOn: $settings.tooltipAutoDismissByDistanceEnabled)
 
                 if settings.tooltipAutoDismissByDistanceEnabled {
                     HStack {
-                        Text(String(localized: "Tooltip auto-hide distance"))
+                        Text(UIString("Tooltip auto-hide distance"))
                         Slider(value: $settings.tooltipDismissDistance, in: 20...400, step: 5) {
-                            Text("Distance")
+                            Text(UIString("Distance"))
                         }
                         Text("\(Int(settings.tooltipDismissDistance))px")
                             .font(.caption)
@@ -81,21 +95,21 @@ struct GeneralSettingsTab: View {
             }
 
             // API Configuration
-            Section(header: Text("OpenAI API")) {
-                Text(String(localized: "API Key, Base URL, and Model are saved together in each preset."))
+            Section(header: Text(UIString("OpenAI API"))) {
+                Text(UIString("API Key, Base URL, and Model are saved together in each preset."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 HStack(alignment: .top, spacing: 12) {
                     // Left: preset list
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(String(localized: "Presets"))
+                        Text(UIString("Presets"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
 
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 6) {
-                                presetRow(id: customProfileTag, title: String(localized: "Custom (unsaved)"))
+                                presetRow(id: customProfileTag, title: UIString("Custom (unsaved)"))
                                 ForEach(settings.modelProfiles) { profile in
                                     presetRow(id: profile.id, title: profile.name)
                                 }
@@ -108,9 +122,9 @@ struct GeneralSettingsTab: View {
                                 .fill(Color.primary.opacity(0.04))
                         }
 
-                        Button(String(localized: "New custom draft")) {
+                        Button(UIString("New custom draft")) {
                             settings.clearSelectedModelProfile()
-                            modelProfileNameDraft = String(localized: "My preset")
+                            modelProfileNameDraft = UIString("My preset")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -119,15 +133,15 @@ struct GeneralSettingsTab: View {
 
                     // Right: editor panel
                     VStack(alignment: .leading, spacing: 10) {
-                        TextField(String(localized: "Preset name"), text: $modelProfileNameDraft)
+                        TextField(UIString("Preset name"), text: $modelProfileNameDraft)
                             .textFieldStyle(.roundedBorder)
 
                         HStack {
                             if showingKey {
-                                TextField("API Key", text: $settings.apiKey)
+                                TextField(UIString("API Key"), text: $settings.apiKey)
                                     .textFieldStyle(.roundedBorder)
                             } else {
-                                SecureField("API Key", text: $settings.apiKey)
+                                SecureField(UIString("API Key"), text: $settings.apiKey)
                                     .textFieldStyle(.roundedBorder)
                             }
                             Button(action: { showingKey.toggle() }) {
@@ -140,34 +154,36 @@ struct GeneralSettingsTab: View {
                             testResult = nil
                         }
 
-                        TextField(String(localized: "API Base URL"), text: $settings.apiBaseURL)
+                        TextField(UIString("API Base URL"), text: $settings.apiBaseURL)
                             .textFieldStyle(.roundedBorder)
                             .onChange(of: settings.apiBaseURL) { _, _ in
                                 testResult = nil
                             }
 
-                        TextField(String(localized: "Model"), text: $settings.apiModel)
+                        TextField(UIString("Model"), text: $settings.apiModel)
                             .textFieldStyle(.roundedBorder)
                             .onChange(of: settings.apiModel) { _, _ in
                                 testResult = nil
                             }
 
                         HStack(spacing: 8) {
-                            Button(String(localized: "Save as new preset")) {
+                            Spacer()
+
+                            Button(UIString("Save")) {
                                 saveAsNewPreset()
                             }
                             .disabled(!canSaveAsNewPreset)
                             .buttonStyle(.bordered)
                             .controlSize(.small)
 
-                            Button(String(localized: "Update selected preset")) {
+                            Button(UIString("Update")) {
                                 updateSelectedPreset()
                             }
                             .disabled(!canUpdateSelectedPreset)
                             .buttonStyle(.bordered)
                             .controlSize(.small)
 
-                            Button(String(localized: "Delete selected preset"), role: .destructive) {
+                            Button(UIString("Delete"), role: .destructive) {
                                 settings.deleteSelectedModelProfile()
                                 syncPresetDraft()
                             }
@@ -177,6 +193,8 @@ struct GeneralSettingsTab: View {
                         }
 
                         HStack(spacing: 8) {
+                            Spacer()
+
                             Button(action: testAPIConnection) {
                                 HStack(spacing: 4) {
                                     if isTesting {
@@ -186,7 +204,7 @@ struct GeneralSettingsTab: View {
                                         Image(systemName: "bolt.fill")
                                             .font(.system(size: 10))
                                     }
-                                    Text(String(localized: "Test Connection"))
+                                    Text(UIString("Test Connection"))
                                         .font(.system(size: 12))
                                 }
                             }
@@ -198,41 +216,72 @@ struct GeneralSettingsTab: View {
                                 testResultLabel(result)
                             }
 
-                            Spacer()
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
             }
 
-            Section(header: Text(String(localized: "Streaming & Think Mode"))) {
-                Toggle(String(localized: "Enable streaming output"), isOn: $settings.streamingEnabled)
+            Section(header: Text(UIString("Streaming & Think Mode"))) {
+                Toggle(UIString("Enable streaming output"), isOn: $settings.streamingEnabled)
 
-                Toggle(String(localized: "Enable Think Mode"), isOn: $settings.thinkModeEnabled)
+                Toggle(UIString("Enable Think Mode"), isOn: $settings.thinkModeEnabled)
                     .disabled(!settings.streamingEnabled)
 
                 if !settings.streamingEnabled {
-                    Text(String(localized: "Think Mode requires streaming to be enabled."))
+                    Text(UIString("Think Mode requires streaming to be enabled."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
-            Section(header: Text(String(localized: "App Scope"))) {
-                Text(String(localized: "Turn PickLingo on or off for each app. Changes apply immediately when that app is frontmost."))
+            Section(header: Text(UIString("App Scope"))) {
+                Text(UIString("PickLingo is enabled in all apps by default. Add apps to the blacklist below to disable it only in those apps. Changes apply immediately when that app is frontmost."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if appScopeItems.isEmpty {
-                    Text(String(localized: "No running apps detected. Open target apps and come back to configure them."))
+                HStack {
+                    Button(UIString("Add App to Blacklist")) {
+                        presentAppBlacklistPicker()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Spacer()
+                }
+
+                if blacklistedAppItems.isEmpty {
+                    Text(UIString("No blacklisted apps yet. Add an app to exclude PickLingo from it."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 8) {
-                            ForEach(appScopeItems) { item in
-                                Toggle(item.name, isOn: appScopeBinding(for: item.id))
-                                    .toggleStyle(.switch)
+                        LazyVStack(alignment: .leading, spacing: 10) {
+                            ForEach(blacklistedAppItems) { item in
+                                HStack(spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.name)
+                                            .font(.system(size: 13, weight: .medium))
+                                        Text(item.bundleID)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .textSelection(.enabled)
+                                    }
+
+                                    Spacer()
+
+                                    Button(UIString("Remove")) {
+                                        settings.setAppBlacklisted(false, for: item.bundleID)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background {
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(Color.primary.opacity(0.04))
+                                }
                             }
                         }
                         .padding(.vertical, 2)
@@ -293,32 +342,61 @@ struct GeneralSettingsTab: View {
         .buttonStyle(.plain)
     }
 
-    private var appScopeItems: [AppScopeItem] {
-        var seen: Set<String> = []
-        let apps = NSWorkspace.shared.runningApplications
-            .compactMap { app -> AppScopeItem? in
-                guard let bundleID = app.bundleIdentifier, !bundleID.isEmpty else { return nil }
-                guard app.activationPolicy == .regular else { return nil }
-                if seen.contains(bundleID) { return nil }
-                seen.insert(bundleID)
-                return AppScopeItem(id: bundleID, name: app.localizedName ?? bundleID)
+    private var blacklistedAppItems: [BlacklistedAppItem] {
+        settings.appEnabledOverrides.keys
+            .map { bundleID in
+                BlacklistedAppItem(
+                    id: bundleID,
+                    name: displayName(for: bundleID),
+                    bundleID: bundleID
+                )
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        return apps
     }
 
-    private func appScopeBinding(for bundleID: String) -> Binding<Bool> {
-        Binding(
-            get: { settings.isAppEnabled(bundleID: bundleID) },
-            set: { enabled in settings.setAppEnabled(enabled, for: bundleID) }
-        )
+    private func displayName(for bundleID: String) -> String {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID),
+              let bundle = Bundle(url: url) else {
+            return bundleID
+        }
+
+        if let displayName = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String,
+           !displayName.isEmpty {
+            return displayName
+        }
+        if let name = bundle.object(forInfoDictionaryKey: "CFBundleName") as? String,
+           !name.isEmpty {
+            return name
+        }
+
+        return FileManager.default.displayName(atPath: url.path)
+    }
+
+    private func presentAppBlacklistPicker() {
+        let panel = NSOpenPanel()
+        panel.title = UIString("Choose Apps to Blacklist")
+        panel.message = UIString("Selected apps will be added to the blacklist and PickLingo will stay disabled in them.")
+        panel.prompt = UIString("Add to Blacklist")
+        panel.allowsMultipleSelection = true
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.applicationBundle]
+
+        if panel.runModal() == .OK {
+            for url in panel.urls {
+                guard let bundle = Bundle(url: url),
+                      let bundleID = bundle.bundleIdentifier,
+                      !bundleID.isEmpty else { continue }
+                settings.setAppBlacklisted(true, for: bundleID)
+            }
+        }
     }
 
     private func syncPresetDraft() {
         if let selected = settings.selectedModelProfile {
             modelProfileNameDraft = selected.name
         } else {
-            modelProfileNameDraft = String(localized: "My preset")
+            modelProfileNameDraft = UIString("My preset")
         }
     }
 

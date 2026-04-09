@@ -2,18 +2,22 @@ import Cocoa
 import SwiftUI
 
 // MARK: - Panel Controller
+private final class KeyableResultPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
 
 @MainActor
-final class ResultPanelController {
+final class ResultPanelController: NSObject, NSWindowDelegate {
     private static let minPanelWidth: CGFloat = 340
     private static let minPanelHeight: CGFloat = 120
-    private static let maxPanelHeightCap: CGFloat = 560
+    private static let defaultPanelWidth: CGFloat = 420
+    private static let defaultPanelHeight: CGFloat = 220
+    private static let maxPanelWidthCap: CGFloat = 900
 
     private var panel: NSPanel?
     private var hostingView: NSHostingView<ResultContentView>?
     private var viewModel = ResultViewModel()
     private var panelOrigin: NSPoint = .zero
-    private var resizeDebounceWorkItem: DispatchWorkItem?
 
     var isPinned: Bool {
         viewModel.isPinned
@@ -34,7 +38,6 @@ final class ResultPanelController {
     ) {
         // Cancel any existing stream but don't animate out
         viewModel.cancelStream()
-        resizeDebounceWorkItem?.cancel()
 
         panelOrigin = origin
 
@@ -44,35 +47,34 @@ final class ResultPanelController {
             self?.dismiss()
         }
 
-        let resultView = ResultContentView(viewModel: viewModel, onContentSizeChange: { [weak self] size in
-            self?.handleContentSizeChange(size)
-        })
+        let resultView = ResultContentView(viewModel: viewModel)
 
         if let panel, let hostingView {
             // Reuse existing panel — just swap the root view
             hostingView.rootView = resultView
+            panel.appearance = AppSettings.shared.appTheme.nsAppearance
+            updatePanelResizeLimits(panel, anchorPoint: origin)
             let fittingSize = hostingView.fittingSize
-            let panelSize = NSSize(
-                width: max(fittingSize.width, Self.minPanelWidth),
-                height: max(fittingSize.height, Self.minPanelHeight)
-            )
+            let panelSize = preferredPanelSize(currentSize: panel.frame.size, fittingSize: fittingSize)
             let panelFrame = calculatePanelFrame(anchorPoint: origin, panelSize: panelSize)
             panel.setFrame(panelFrame, display: false)
             panel.alphaValue = 1.0
             panel.orderFrontRegardless()
+            panel.makeKey()
+            NSApp.activate(ignoringOtherApps: true)
         } else {
             // First time: create panel and hosting view
             let hv = NSHostingView(rootView: resultView)
             let fittingSize = hv.fittingSize
 
-            let p = NSPanel(
+            let p = KeyableResultPanel(
                 contentRect: NSRect(
                     x: 0,
                     y: 0,
                     width: max(fittingSize.width, Self.minPanelWidth),
                     height: max(fittingSize.height, Self.minPanelHeight)
                 ),
-                styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
+                styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView, .resizable],
                 backing: .buffered,
                 defer: false
             )
@@ -85,15 +87,19 @@ final class ResultPanelController {
             p.hidesOnDeactivate = false
             p.animationBehavior = .utilityWindow
             p.contentView = hv
+            p.appearance = AppSettings.shared.appTheme.nsAppearance
+            p.delegate = self
 
-            let panelSize = NSSize(
-                width: max(fittingSize.width, Self.minPanelWidth),
-                height: max(fittingSize.height, Self.minPanelHeight)
-            )
+            updatePanelResizeLimits(p, anchorPoint: origin)
+
+            let panelSize = preferredPanelSize(currentSize: nil, fittingSize: fittingSize)
             let panelFrame = calculatePanelFrame(anchorPoint: origin, panelSize: panelSize)
             p.setFrameOrigin(panelFrame.origin)
+            p.setContentSize(panelSize)
             p.alphaValue = 0
             p.orderFrontRegardless()
+            p.makeKey()
+            NSApp.activate(ignoringOtherApps: true)
 
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.12
@@ -107,9 +113,12 @@ final class ResultPanelController {
         viewModel.execute(text: text, plugin: plugin, userInput: userInput, thinkModeOverride: thinkModeOverride)
     }
 
+    func applyCurrentTheme() {
+        panel?.appearance = AppSettings.shared.appTheme.nsAppearance
+    }
+
     func dismiss() {
         viewModel.cancelStream()
-        resizeDebounceWorkItem?.cancel()
         guard let panel else { return }
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.1
@@ -125,41 +134,34 @@ final class ResultPanelController {
         }
     }
 
-    // MARK: - Dynamic Resizing
-
-    private func handleContentSizeChange(_ contentSize: CGSize) {
-        resizeDebounceWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.resizePanel(to: contentSize)
-        }
-        resizeDebounceWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: workItem)
+    private func preferredPanelSize(currentSize: NSSize?, fittingSize: NSSize) -> NSSize {
+        let width = currentSize?.width ?? max(fittingSize.width, Self.defaultPanelWidth)
+        let height = currentSize?.height ?? max(fittingSize.height, Self.defaultPanelHeight)
+        return NSSize(
+            width: max(width, Self.minPanelWidth),
+            height: max(height, Self.minPanelHeight)
+        )
     }
 
-    private func resizePanel(to contentSize: CGSize) {
-        guard let panel else { return }
-
-        let screenHeight = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 800
-        let maxHeight = min(screenHeight * 0.6, Self.maxPanelHeightCap)
-
-        let newSize = NSSize(
-            width: max(contentSize.width, Self.minPanelWidth),
-            height: min(max(contentSize.height, Self.minPanelHeight), maxHeight)
+    private func updatePanelResizeLimits(_ panel: NSPanel, anchorPoint: NSPoint) {
+        let visibleFrame = screen(for: anchorPoint)?.visibleFrame
+            ?? (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        panel.minSize = NSSize(width: Self.minPanelWidth, height: Self.minPanelHeight)
+        panel.maxSize = NSSize(
+            width: min(visibleFrame.width * 0.85, Self.maxPanelWidthCap),
+            height: visibleFrame.height * 0.85
         )
+    }
 
-        let newFrame = calculatePanelFrame(anchorPoint: panelOrigin, panelSize: newSize)
-
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.15
-            ctx.allowsImplicitAnimation = true
-            panel.animator().setFrame(newFrame, display: true)
-        }
+    private func screen(for point: NSPoint) -> NSScreen? {
+        NSScreen.screens.first(where: { $0.frame.contains(point) }) ?? NSScreen.main ?? NSScreen.screens.first
     }
 
     private func calculatePanelFrame(anchorPoint: NSPoint, panelSize: NSSize) -> NSRect {
         var origin = NSPoint(x: anchorPoint.x - panelSize.width / 2, y: anchorPoint.y - panelSize.height - 10)
 
-        if let screen = NSScreen.main ?? NSScreen.screens.first {
+        if let screen = screen(for: anchorPoint) {
             let screenFrame = screen.visibleFrame
 
             if origin.x + panelSize.width > screenFrame.maxX {
@@ -178,14 +180,10 @@ final class ResultPanelController {
 
         return NSRect(origin: origin, size: panelSize)
     }
-}
 
-// MARK: - Content Size PreferenceKey
-
-struct ContentSizePreferenceKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        value = nextValue()
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let panel else { return }
+        panelOrigin = NSPoint(x: panel.frame.midX, y: panel.frame.maxY + 10)
     }
 }
 
@@ -201,7 +199,6 @@ struct BodyContentHeightPreferenceKey: PreferenceKey {
 @MainActor
 final class ResultViewModel: ObservableObject {
     let minPanelWidth: CGFloat = 340
-    let maxPanelWidth: CGFloat = 900
 
     @Published var sourceText: String = ""
     @Published var resultText: String = ""
@@ -221,17 +218,20 @@ final class ResultViewModel: ObservableObject {
     @Published var targetLang: String = ""
     @Published var detectedSourceLanguage: Language = .english
     @Published var currentTargetLanguage: Language = .chinese
-    @Published var panelWidth: CGFloat = 340
 
     var onDismiss: (() -> Void)?
     var onPinChanged: ((Bool) -> Void)?
     private var currentStreamTask: Task<Void, Never>?
+    private var latestAnswerText: String = ""
+    private var pendingFollowUpDisplayPrefix: String?
 
     func execute(text: String, plugin: Plugin, userInput: String? = nil, thinkModeOverride: Bool? = nil) {
         sourceText = text
         currentPlugin = plugin
         userInputText = userInput ?? ""
         self.thinkModeOverride = thinkModeOverride
+        latestAnswerText = ""
+        pendingFollowUpDisplayPrefix = nil
 
         if plugin.showLanguageControls {
             let settings = AppSettings.shared
@@ -244,8 +244,8 @@ final class ResultViewModel: ObservableObject {
             let target = LanguageDetector.targetLanguage(for: detected)
             detectedSourceLanguage = detected
             currentTargetLanguage = target
-            sourceLang = detected.nativeName
-            targetLang = target.nativeName
+            sourceLang = detected.uiName
+            targetLang = target.uiName
         }
 
         performExecution()
@@ -253,7 +253,7 @@ final class ResultViewModel: ObservableObject {
 
     func changeTargetLanguage(_ language: Language) {
         currentTargetLanguage = language
-        targetLang = language.nativeName
+        targetLang = language.uiName
         performExecution()
     }
 
@@ -268,7 +268,9 @@ final class ResultViewModel: ObservableObject {
 
         isLoading = true
         errorMessage = nil
-        resultText = ""
+        let displayPrefix = pendingFollowUpDisplayPrefix
+        pendingFollowUpDisplayPrefix = nil
+        resultText = displayPrefix ?? ""
         thinkingText = ""
         isThinking = false
 
@@ -284,6 +286,7 @@ final class ResultViewModel: ObservableObject {
 
             currentStreamTask = Task {
                 do {
+                    var latestChunkedAnswer = ""
                     let stream = PluginExecutor.shared.executeStream(
                         text: text,
                         plugin: plugin,
@@ -301,11 +304,13 @@ final class ResultViewModel: ObservableObject {
                         case .text(let delta):
                             if isThinking { isThinking = false }
                             if isLoading { isLoading = false }
+                            latestChunkedAnswer += delta
                             resultText += delta
                         case .done:
                             break
                         }
                     }
+                    latestAnswerText = latestChunkedAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
                     isLoading = false
                 } catch {
                     if !Task.isCancelled {
@@ -328,7 +333,12 @@ final class ResultViewModel: ObservableObject {
                         thinkModeOverride: thinkModeOverride
                     )
                     if !Task.isCancelled {
-                        resultText = result
+                        latestAnswerText = result.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if let prefix = displayPrefix {
+                            resultText = prefix + result
+                        } else {
+                            resultText = result
+                        }
                     }
                 } catch {
                     if !Task.isCancelled {
@@ -371,6 +381,42 @@ final class ResultViewModel: ObservableObject {
         }
     }
 
+    func regenerateResult() {
+        performExecution()
+    }
+
+    func submitFollowUp(_ userInput: String, thinkModeOverride: Bool? = nil) {
+        guard let plugin = currentPlugin else { return }
+        let context = latestAnswerText.isEmpty
+            ? resultText.trimmingCharacters(in: .whitespacesAndNewlines)
+            : latestAnswerText
+        let question = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !context.isEmpty, !question.isEmpty else { return }
+
+        let previousDisplay = resultText.trimmingCharacters(in: .whitespacesAndNewlines)
+        pendingFollowUpDisplayPrefix = previousDisplay + "\n\n---\n\n> " + question + "\n\n"
+
+        sourceText = context
+        userInputText = question
+        self.thinkModeOverride = thinkModeOverride
+
+        if plugin.showLanguageControls {
+            let settings = AppSettings.shared
+            let detected: Language
+            if settings.autoDetectLanguage {
+                detected = LanguageDetector.detect(context) ?? .english
+            } else {
+                detected = .english
+            }
+            detectedSourceLanguage = detected
+            sourceLang = detected.uiName
+            // Keep user's currently selected target language for continuity.
+            targetLang = currentTargetLanguage.uiName
+        }
+
+        performExecution()
+    }
+
     private func simulatePaste() {
         let source = CGEventSource(stateID: .combinedSessionState)
         let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
@@ -399,9 +445,8 @@ struct ResultContentView: View {
 
     @ObservedObject var viewModel: ResultViewModel
     @Environment(\.colorScheme) var colorScheme
-    var onContentSizeChange: ((CGSize) -> Void)?
-    @State private var resizeStartWidth: CGFloat?
     @State private var bodyContentHeight: CGFloat = 0
+    @State private var followUpInputText: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -419,19 +464,8 @@ struct ResultContentView: View {
             } else {
                 contentBody
             }
-
-            resizeHandle
         }
-        .frame(width: viewModel.panelWidth)
-        .background {
-            GeometryReader { geometry in
-                Color.clear
-                    .preference(key: ContentSizePreferenceKey.self, value: geometry.size)
-            }
-        }
-        .onPreferenceChange(ContentSizePreferenceKey.self) { size in
-            onContentSizeChange?(size)
-        }
+        .frame(minWidth: viewModel.minPanelWidth, maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(BodyContentHeightPreferenceKey.self) { height in
             bodyContentHeight = height
         }
@@ -480,6 +514,12 @@ struct ResultContentView: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 8)
 
+            if shouldShowFollowUpInput {
+                followUpInput
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
+            }
+
             // Action bar (only if the plugin has at least one action enabled)
             if !viewModel.isLoading && viewModel.errorMessage == nil && !viewModel.resultText.isEmpty,
                let actions = viewModel.currentPlugin?.enabledActions, !actions.isEmpty {
@@ -491,40 +531,6 @@ struct ResultContentView: View {
                 Color.clear
                     .preference(key: BodyContentHeightPreferenceKey.self, value: geometry.size.height)
             }
-        }
-    }
-
-    private var resizeHandle: some View {
-        HStack(spacing: 0) {
-            Spacer()
-            Rectangle()
-                .fill(Color.primary.opacity(0.1))
-                .frame(width: 8, height: 12)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                .padding(.trailing, 8)
-                .padding(.bottom, 6)
-                .contentShape(Rectangle())
-                .onHover { hovering in
-                    if hovering {
-                        NSCursor.resizeLeftRight.set()
-                    } else {
-                        NSCursor.arrow.set()
-                    }
-                }
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if resizeStartWidth == nil {
-                                resizeStartWidth = viewModel.panelWidth
-                            }
-                            let base = resizeStartWidth ?? viewModel.panelWidth
-                            let next = base + value.translation.width
-                            viewModel.panelWidth = min(max(next, viewModel.minPanelWidth), viewModel.maxPanelWidth)
-                        }
-                        .onEnded { _ in
-                            resizeStartWidth = nil
-                        }
-                )
         }
     }
 
@@ -555,7 +561,7 @@ struct ResultContentView: View {
             Menu {
                 // Show ALL languages — detection may be wrong, so don't exclude source
                 ForEach(Language.allCases) { lang in
-                    Button(lang.nativeName) {
+                    Button(lang.uiName) {
                         viewModel.changeTargetLanguage(lang)
                     }
                 }
@@ -594,7 +600,7 @@ struct ResultContentView: View {
                 Image(systemName: plugin.icon)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Text(plugin.name)
+                Text(plugin.uiDisplayName)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             }
@@ -617,7 +623,7 @@ struct ResultContentView: View {
                     .rotationEffect(.degrees(viewModel.isPinned ? 0 : 45))
             }
             .buttonStyle(.plain)
-            .help(viewModel.isPinned ? String(localized: "Unpin panel") : String(localized: "Pin panel"))
+            .help(viewModel.isPinned ? UIString("Unpin panel") : UIString("Pin panel"))
 
             Button(action: viewModel.dismiss) {
                 Image(systemName: "xmark.circle.fill")
@@ -653,7 +659,7 @@ struct ResultContentView: View {
                         ProgressView()
                             .controlSize(.mini)
                     }
-                    Text("Thinking…")
+                    Text(UIString("Thinking…"))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                 }
@@ -690,11 +696,51 @@ struct ResultContentView: View {
     }
 
     private var loadingLabel: String {
-        guard let plugin = viewModel.currentPlugin else { return String(localized: "Processing…") }
+        guard let plugin = viewModel.currentPlugin else { return UIString("Processing…") }
         if plugin.isTranslatePlugin {
-            return String(localized: "Translating…")
+            return UIString("Translating…")
         }
-        return String(localized: "Processing…")
+        return UIString("Processing…")
+    }
+
+    private var shouldShowFollowUpInput: Bool {
+        guard let plugin = viewModel.currentPlugin else { return false }
+        return plugin.enabledActions.contains(.followUp) &&
+            !viewModel.isLoading &&
+            viewModel.errorMessage == nil &&
+            !viewModel.resultText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var followUpInput: some View {
+        HStack(spacing: 8) {
+            TextField(UIString("Type your follow-up..."), text: $followUpInputText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .onSubmit {
+                    submitFollowUpIfValid()
+                }
+
+            Button(action: submitFollowUpIfValid) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundColor(followUpInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .accentColor)
+            }
+            .buttonStyle(.plain)
+            .disabled(followUpInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+        }
+    }
+
+    private func submitFollowUpIfValid() {
+        let text = followUpInputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        followUpInputText = ""
+        viewModel.submitFollowUp(text)
     }
 
     // MARK: - Action Bar
@@ -708,18 +754,23 @@ struct ResultContentView: View {
 
             HStack(spacing: 2) {
                 if actions.contains(.copy) {
-                    ActionChip(title: "Copy", icon: "doc.on.doc", shortcut: "c") {
+                    ActionChip(title: UIString("Copy"), icon: "doc.on.doc", shortcut: "c") {
                         viewModel.copyResult()
                     }
                 }
                 if actions.contains(.insert) {
-                    ActionChip(title: String(localized: "Insert"), icon: "text.insert", shortcut: "i") {
+                    ActionChip(title: UIString("Insert"), icon: "text.insert", shortcut: "i") {
                         viewModel.insertResult()
                     }
                 }
                 if actions.contains(.replace) {
-                    ActionChip(title: String(localized: "Replace"), icon: "arrow.2.squarepath", shortcut: "r") {
+                    ActionChip(title: UIString("Replace"), icon: "arrow.2.squarepath", shortcut: "r") {
                         viewModel.replaceResult()
+                    }
+                }
+                if actions.contains(.regenerate) {
+                    ActionChip(title: UIString("Regenerate"), icon: "arrow.clockwise", shortcut: "g") {
+                        viewModel.regenerateResult()
                     }
                 }
                 Spacer()

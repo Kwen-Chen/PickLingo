@@ -24,7 +24,7 @@ struct PluginSettingsView: View {
     private var pluginListView: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(String(localized: "Plugins"))
+                Text(UIString("Plugins"))
                     .font(.headline)
                 Spacer()
                 Button(action: addNewPlugin) {
@@ -32,7 +32,7 @@ struct PluginSettingsView: View {
                         .font(.system(size: 12, weight: .medium))
                 }
                 .buttonStyle(.borderless)
-                .help(String(localized: "Add new plugin"))
+                .help(UIString("Add new plugin"))
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
@@ -54,7 +54,7 @@ struct PluginSettingsView: View {
 
             // Bottom bar
             HStack {
-                Button(String(localized: "Reset All")) {
+                Button(UIString("Reset All")) {
                     pluginManager.resetToDefaults()
                     selectedPluginID = nil
                 }
@@ -89,21 +89,21 @@ struct PluginSettingsView: View {
                 }
             )
             .id(id) // Force re-render when selection changes
-            .alert(String(localized: "Delete Plugin?"), isPresented: $showingDeleteConfirmation) {
-                Button(String(localized: "Delete"), role: .destructive) {
+            .alert(UIString("Delete Plugin?"), isPresented: $showingDeleteConfirmation) {
+                Button(UIString("Delete"), role: .destructive) {
                     if let p = pluginToDelete {
                         selectedPluginID = nil
                         pluginManager.deletePlugin(p)
                     }
                 }
-                Button(String(localized: "Cancel"), role: .cancel) {}
+                Button(UIString("Cancel"), role: .cancel) {}
             } message: {
-                Text(String(localized: "This plugin will be permanently removed."))
+                Text(UIString("This plugin will be permanently removed."))
             }
         } else {
             VStack {
                 Spacer()
-                Text(String(localized: "Select a plugin to edit"))
+                Text(UIString("Select a plugin to edit"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -114,7 +114,7 @@ struct PluginSettingsView: View {
     private func addNewPlugin() {
         let newPlugin = Plugin(
             id: UUID(),
-            name: String(localized: "New Plugin"),
+            name: UIString("New Plugin"),
             icon: "star",
             prompt: "You are a helpful assistant. Process the following text:\n\n{selected_text}",
             isEnabled: true,
@@ -148,7 +148,7 @@ struct PluginListRow: View {
                 .foregroundStyle(plugin.isEnabled ? .primary : .tertiary)
                 .frame(width: 18)
 
-            Text(plugin.name)
+            Text(plugin.uiDisplayName)
                 .font(.system(size: 13))
                 .foregroundStyle(plugin.isEnabled ? .primary : .secondary)
                 .lineLimit(1)
@@ -190,17 +190,17 @@ struct PluginEditView: View {
             VStack(alignment: .leading, spacing: 16) {
                 // Name
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "Name"))
+                    Text(UIString("Name"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    TextField(String(localized: "Plugin name"), text: $plugin.name)
+                    TextField(UIString("Plugin name"), text: $plugin.name)
                         .textFieldStyle(.roundedBorder)
                         .onChange(of: plugin.name) { _, _ in onSave() }
                 }
 
                 // Icon
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "Icon"))
+                    Text(UIString("Icon"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -231,7 +231,7 @@ struct PluginEditView: View {
 
                 // Prompt
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "System Prompt"))
+                    Text(UIString("System Prompt"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -252,7 +252,7 @@ struct PluginEditView: View {
 
                     // Placeholder hints
                     HStack(spacing: 6) {
-                        Text(String(localized: "Placeholders:"))
+                        Text(UIString("Placeholders:"))
                             .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
                         PlaceholderChip("{selected_text}")
@@ -264,12 +264,12 @@ struct PluginEditView: View {
 
                 // User Input toggle
                 VStack(alignment: .leading, spacing: 4) {
-                    Toggle(String(localized: "Requires user input"), isOn: $plugin.needsUserInput)
+                    Toggle(UIString("Requires user input"), isOn: $plugin.needsUserInput)
                         .onChange(of: plugin.needsUserInput) { _, _ in onSave() }
 
                     if plugin.needsUserInput {
                         TextField(
-                            String(localized: "Input placeholder"),
+                            UIString("Input placeholder"),
                             text: Binding(
                                 get: { plugin.userInputPlaceholder ?? "" },
                                 set: { plugin.userInputPlaceholder = $0.isEmpty ? nil : $0 }
@@ -283,21 +283,21 @@ struct PluginEditView: View {
 
                 // Language controls toggle
                 VStack(alignment: .leading, spacing: 4) {
-                    Toggle(String(localized: "Show source/target language controls"), isOn: $plugin.showLanguageControls)
+                    Toggle(UIString("Show source/target language controls"), isOn: $plugin.showLanguageControls)
                         .onChange(of: plugin.showLanguageControls) { _, _ in onSave() }
 
-                    Text(String(localized: "When enabled, source and target language selectors appear in the result panel header."))
+                    Text(UIString("When enabled, source and target language selectors appear in the result panel header."))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
 
                 // Action buttons
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "Result Actions"))
+                    Text(UIString("Result Actions"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    Toggle(String(localized: "Copy"), isOn: Binding(
+                    Toggle(UIString("Copy"), isOn: Binding(
                         get: { plugin.enabledActions.contains(.copy) },
                         set: { enabled in
                             if enabled { plugin.enabledActions.insert(.copy) }
@@ -305,7 +305,7 @@ struct PluginEditView: View {
                             onSave()
                         }
                     ))
-                    Toggle(String(localized: "Insert"), isOn: Binding(
+                    Toggle(UIString("Insert"), isOn: Binding(
                         get: { plugin.enabledActions.contains(.insert) },
                         set: { enabled in
                             if enabled { plugin.enabledActions.insert(.insert) }
@@ -313,7 +313,7 @@ struct PluginEditView: View {
                             onSave()
                         }
                     ))
-                    Toggle(String(localized: "Replace"), isOn: Binding(
+                    Toggle(UIString("Replace"), isOn: Binding(
                         get: { plugin.enabledActions.contains(.replace) },
                         set: { enabled in
                             if enabled { plugin.enabledActions.insert(.replace) }
@@ -321,8 +321,24 @@ struct PluginEditView: View {
                             onSave()
                         }
                     ))
+                    Toggle(UIString("Regenerate"), isOn: Binding(
+                        get: { plugin.enabledActions.contains(.regenerate) },
+                        set: { enabled in
+                            if enabled { plugin.enabledActions.insert(.regenerate) }
+                            else { plugin.enabledActions.remove(.regenerate) }
+                            onSave()
+                        }
+                    ))
+                    Toggle(UIString("Follow-up"), isOn: Binding(
+                        get: { plugin.enabledActions.contains(.followUp) },
+                        set: { enabled in
+                            if enabled { plugin.enabledActions.insert(.followUp) }
+                            else { plugin.enabledActions.remove(.followUp) }
+                            onSave()
+                        }
+                    ))
 
-                    Text(String(localized: "Choose which action buttons appear at the bottom of the result panel."))
+                    Text(UIString("Choose which action buttons appear at the bottom of the result panel."))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -332,13 +348,13 @@ struct PluginEditView: View {
                 // Action buttons
                 HStack {
                     if plugin.isBuiltIn {
-                        Button(String(localized: "Reset to Default")) {
+                        Button(UIString("Reset to Default")) {
                             onReset()
                         }
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
                     } else {
-                        Button(String(localized: "Delete Plugin"), role: .destructive) {
+                        Button(UIString("Delete Plugin"), role: .destructive) {
                             onDelete()
                         }
                         .buttonStyle(.borderless)

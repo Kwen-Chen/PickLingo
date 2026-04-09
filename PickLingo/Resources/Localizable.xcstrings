@@ -34,6 +34,26 @@
     "Add new plugin" : {
 
     },
+    "Add App to Blacklist" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加应用到黑名单"
+          }
+        }
+      }
+    },
+    "Add to Blacklist" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入黑名单"
+          }
+        }
+      }
+    },
     "After granting permission, this screen will update automatically." : {
       "localizations" : {
         "zh-Hans" : {
@@ -112,6 +132,16 @@
     "Ask a question about this text..." : {
 
     },
+    "Blacklist %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入黑名单：%1$@"
+          }
+        }
+      }
+    },
     "Auto-detect source language" : {
       "localizations" : {
         "zh-Hans" : {
@@ -137,6 +167,16 @@
     },
     "Choose which action buttons appear at the bottom of the result panel." : {
 
+    },
+    "Choose Apps to Blacklist" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择要加入黑名单的应用"
+          }
+        }
+      }
     },
     "Copy" : {
       "localizations" : {
@@ -397,6 +437,26 @@
     "Replace" : {
 
     },
+    "Regenerate" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新生成"
+          }
+        }
+      }
+    },
+    "Remove" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除"
+          }
+        }
+      }
+    },
     "Requires user input" : {
 
     },
@@ -408,6 +468,16 @@
     },
     "Result Actions" : {
 
+    },
+    "Selected apps will be added to the blacklist and PickLingo will stay disabled in them." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选应用会被加入黑名单，PickLingo 将在这些应用中保持禁用。"
+          }
+        }
+      }
     },
     "Russian" : {
       "localizations" : {
@@ -540,6 +610,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "欢迎使用 PickLingo"
+          }
+        }
+      }
+    },
+    "No running apps detected. Open target apps and come back to add them to the blacklist." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未检测到正在运行的应用。请先打开目标应用，再回来把它加入黑名单。"
+          }
+        }
+      }
+    },
+    "No blacklisted apps yet. Add an app to exclude PickLingo from it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "黑名单目前为空。添加一个应用后，PickLingo 将不会在该应用中生效。"
+          }
+        }
+      }
+    },
+    "PickLingo is enabled in all apps by default. Add apps to the blacklist below to disable it only in those apps. Changes apply immediately when that app is frontmost." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PickLingo 默认会在所有应用中启用。你只需要把不想使用的应用加入下面的黑名单；当这些应用位于前台时，变更会立即生效。"
           }
         }
       }

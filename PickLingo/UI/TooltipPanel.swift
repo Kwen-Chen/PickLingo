@@ -74,6 +74,7 @@ final class TooltipPanel: NSPanel {
     }
 
     func show(at point: NSPoint) {
+        applyCurrentTheme()
         setupContent()
 
         let size = self.frame.size
@@ -89,6 +90,10 @@ final class TooltipPanel: NSPanel {
         setupGlobalClickMonitor()
         setupMouseMoveMonitor()
         startAutoHideTimer(interval: 6.0)
+    }
+
+    func applyCurrentTheme() {
+        self.appearance = AppSettings.shared.appTheme.nsAppearance
     }
 
     // MARK: - Mouse Tracking (enter/exit tooltip area)
@@ -252,7 +257,7 @@ struct TooltipPluginButton: View {
                 isHovered = hovering
             }
         }
-        .help(plugin.name)
-        .accessibilityLabel(Text(plugin.name))
+        .help(plugin.uiDisplayName)
+        .accessibilityLabel(Text(plugin.uiDisplayName))
     }
 }

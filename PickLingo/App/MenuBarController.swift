@@ -28,8 +28,8 @@ final class MenuBarController {
         // Enable/Disable toggle
         let toggleItem = NSMenuItem(
             title: settings.isEnabled
-                ? String(localized: "Disable PickLingo")
-                : String(localized: "Enable PickLingo"),
+                ? UIString("Disable PickLingo")
+                : UIString("Enable PickLingo"),
             action: #selector(AppDelegate.toggleEnabled),
             keyEquivalent: ""
         )
@@ -40,7 +40,7 @@ final class MenuBarController {
 
         // Settings
         menu.addItem(
-            withTitle: String(localized: "Settings…"),
+            withTitle: UIString("Settings…"),
             action: #selector(AppDelegate.openSettings),
             keyEquivalent: ","
         )
@@ -49,7 +49,7 @@ final class MenuBarController {
 
         // Quit
         menu.addItem(
-            withTitle: String(localized: "Quit PickLingo"),
+            withTitle: UIString("Quit PickLingo"),
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )

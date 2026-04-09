@@ -15,18 +15,7 @@ enum Language: String, CaseIterable, Codable, Identifiable {
     var id: String { rawValue }
 
     var displayName: String {
-        switch self {
-        case .english: return String(localized: "English")
-        case .chinese: return String(localized: "Chinese")
-        case .japanese: return String(localized: "Japanese")
-        case .korean: return String(localized: "Korean")
-        case .french: return String(localized: "French")
-        case .german: return String(localized: "German")
-        case .spanish: return String(localized: "Spanish")
-        case .russian: return String(localized: "Russian")
-        case .portuguese: return String(localized: "Portuguese")
-        case .arabic: return String(localized: "Arabic")
-        }
+        UIString(localizationKey)
     }
 
     var nativeName: String {
@@ -43,6 +32,25 @@ enum Language: String, CaseIterable, Codable, Identifiable {
         case .arabic: return "العربية"
         }
     }
+
+    var uiName: String {
+        UIString(localizationKey)
+    }
+
+    private var localizationKey: String {
+        switch self {
+        case .english: return "English"
+        case .chinese: return "Chinese"
+        case .japanese: return "Japanese"
+        case .korean: return "Korean"
+        case .french: return "French"
+        case .german: return "German"
+        case .spanish: return "Spanish"
+        case .russian: return "Russian"
+        case .portuguese: return "Portuguese"
+        case .arabic: return "Arabic"
+        }
+    }
 }
 
 struct TranslationResult {
@@ -51,4 +59,3 @@ struct TranslationResult {
     let sourceLanguage: Language
     let targetLanguage: Language
 }
-
