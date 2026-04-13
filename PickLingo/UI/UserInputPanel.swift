@@ -15,12 +15,19 @@ final class UserInputPanelController {
     var onSubmit: ((String, Bool?) -> Void)?
     var onCancel: (() -> Void)?
 
-    func show(plugin: Plugin, selectedText: String, at origin: NSPoint, placeholderOverride: String? = nil) {
+    func show(
+        plugin: Plugin,
+        selectedText: String,
+        at origin: NSPoint,
+        placeholderOverride: String? = nil,
+        showSelectionPreview: Bool = true
+    ) {
         dismiss()
 
         let inputView = UserInputView(
             plugin: plugin,
             selectedTextPreview: String(selectedText.prefix(100)),
+            showSelectionPreview: showSelectionPreview,
             placeholderOverride: placeholderOverride,
             onSubmit: { [weak self] text, thinkModeOverride in
                 self?.onSubmit?(text, thinkModeOverride)
@@ -102,6 +109,7 @@ final class UserInputPanelController {
 struct UserInputView: View {
     let plugin: Plugin
     let selectedTextPreview: String
+    let showSelectionPreview: Bool
     let placeholderOverride: String?
     let onSubmit: (String, Bool?) -> Void
     let onCancel: () -> Void
@@ -133,12 +141,14 @@ struct UserInputView: View {
             .padding(.horizontal, 14)
             .padding(.top, 10)
 
-            // Selected text preview
-            Text(selectedTextPreview + (selectedTextPreview.count >= 100 ? "…" : ""))
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-                .lineLimit(2)
-                .padding(.horizontal, 14)
+            if showSelectionPreview && !selectedTextPreview.isEmpty {
+                // Selected text preview
+                Text(selectedTextPreview + (selectedTextPreview.count >= 100 ? "…" : ""))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+                    .padding(.horizontal, 14)
+            }
 
             // Input field
             HStack(spacing: 8) {

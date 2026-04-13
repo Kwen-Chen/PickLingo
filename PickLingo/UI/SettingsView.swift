@@ -42,6 +42,23 @@ struct GeneralSettingsTab: View {
 
                 Toggle(UIString("Auto-detect source language"), isOn: $settings.autoDetectLanguage)
 
+                Toggle(UIString("Enable Quick Ask shortcut"), isOn: $settings.quickAskEnabled)
+
+                HStack(spacing: 8) {
+                    Text(UIString("Quick Ask shortcut"))
+                    TextField(QuickAskShortcutParser.defaultShortcut, text: $settings.quickAskShortcut)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(!settings.quickAskEnabled)
+                        .onSubmit {
+                            settings.quickAskShortcut = QuickAskShortcutParser.normalize(settings.quickAskShortcut)
+                        }
+                }
+
+                Text(UIString("Use cmd+cmd for double-Command tap, or shortcuts like cmd+shift+k."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 Toggle(UIString("Launch at login"), isOn: $settings.launchAtLogin)
                     .onChange(of: settings.launchAtLogin) { _, enabled in
                         updateLaunchAtLogin(enabled: enabled)

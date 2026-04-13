@@ -174,16 +174,37 @@ struct PluginEditView: View {
     let onSave: () -> Void
     let onDelete: () -> Void
     let onReset: () -> Void
+    @State private var iconSearchText: String = ""
+    @State private var showingIconPicker: Bool = false
 
     // Common SF Symbol names for the picker
     private let commonIcons = [
-        "translate", "book", "wand.and.stars", "text.quote",
-        "bubble.left.and.text.bubble.right", "star", "lightbulb",
-        "pencil", "doc.text", "magnifyingglass", "brain.head.profile",
-        "text.badge.checkmark", "character.book.closed", "list.bullet",
-        "arrow.triangle.2.circlepath", "sparkles", "text.alignleft",
-        "globe", "abc", "textformat", "highlighter", "bookmark",
+        "translate", "globe", "network", "link", "safari",
+        "book", "character.book.closed", "text.book.closed", "newspaper",
+        "doc.text", "doc.on.doc", "doc.badge.plus", "folder", "folder.badge.plus",
+        "folder.badge.magnifyingglass", "externaldrive", "externaldrive.badge.plus",
+        "magnifyingglass", "magnifyingglass.circle", "binoculars", "line.3.horizontal.decrease.circle",
+        "bubble.left.and.text.bubble.right", "message", "message.badge", "ellipsis.bubble",
+        "wand.and.stars", "sparkles", "magicmouse", "paintbrush", "highlighter",
+        "pencil", "pencil.and.outline", "square.and.pencil", "lasso",
+        "brain.head.profile", "lightbulb", "bolt", "flame", "target",
+        "text.quote", "text.alignleft", "textformat", "textformat.abc", "abc",
+        "list.bullet", "checklist", "checkmark.circle", "text.badge.checkmark",
+        "square.and.arrow.up", "square.and.arrow.down", "arrow.triangle.2.circlepath", "arrow.clockwise",
+        "scissors", "paperclip", "bookmark", "bookmark.circle", "tag",
+        "calendar", "clock", "timer", "bell", "bell.badge",
+        "terminal", "chevron.left.forwardslash.chevron.right", "curlybraces", "hammer",
+        "wrench.and.screwdriver", "gear", "gearshape", "slider.horizontal.3",
+        "lock", "lock.open", "key", "shield", "checkmark.shield",
+        "person", "person.2", "person.crop.circle", "person.badge.key",
+        "star", "star.fill", "heart", "flag", "pin",
     ]
+
+    private var filteredIcons: [String] {
+        let keyword = iconSearchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !keyword.isEmpty else { return commonIcons }
+        return commonIcons.filter { $0.lowercased().contains(keyword) }
+    }
 
     var body: some View {
         ScrollView {
@@ -214,28 +235,105 @@ struct PluginEditView: View {
                                     .fill(Color.primary.opacity(0.06))
                             }
 
-                        // Picker
-                        Picker("", selection: $plugin.icon) {
-                            ForEach(commonIcons, id: \.self) { icon in
-                                Label(icon, systemImage: icon)
-                                    .tag(icon)
+                        Button {
+                            showingIconPicker = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: plugin.icon)
+                                Text(plugin.icon)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            .font(.system(size: 12))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.primary.opacity(0.06))
                             }
                         }
-                        .labelsHidden()
-                        .frame(maxWidth: 200)
-                        .onChange(of: plugin.icon) { _, _ in onSave() }
+                        .buttonStyle(.plain)
+                        .popover(isPresented: $showingIconPicker, arrowEdge: .bottom) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                TextField(UIString("Search icons"), text: $iconSearchText)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.system(size: 12))
+                                    .padding(.horizontal, 12)
+                                    .padding(.top, 12)
+
+                                ScrollView {
+                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], spacing: 8) {
+                                        ForEach(filteredIcons, id: \.self) { icon in
+                                            Button {
+                                                plugin.icon = icon
+                                                onSave()
+                                                showingIconPicker = false
+                                            } label: {
+                                                HStack(spacing: 6) {
+                                                    Image(systemName: icon)
+                                                        .frame(width: 16)
+                                                    Text(icon)
+                                                        .font(.system(size: 11))
+                                                        .lineLimit(1)
+                                                        .truncationMode(.middle)
+                                                    Spacer(minLength: 0)
+                                                }
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 6)
+                                                .background {
+                                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                                        .fill(plugin.icon == icon ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04))
+                                                }
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.bottom, 12)
+                                }
+                            }
+                            .frame(width: 380, height: 300)
+                        }
 
                         Spacer()
                     }
                 }
 
-                // Prompt
+                // Execution mode
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(UIString("System Prompt"))
+                    Text(UIString("Execution"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    TextEditor(text: $plugin.prompt)
+                    Picker("", selection: $plugin.executionMode) {
+                        Text(UIString("AI")).tag(PluginExecutionMode.ai)
+                        Text(UIString("Local Action")).tag(PluginExecutionMode.localAction)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .onChange(of: plugin.executionMode) { _, newValue in
+                        if newValue == .localAction {
+                            if plugin.localCommandTemplate?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+                                plugin.localCommandTemplate = "open {selected_text}"
+                            }
+                        }
+                        onSave()
+                    }
+                }
+
+                if plugin.executionMode == .localAction {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(UIString("Local Command"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        TextEditor(text: Binding(
+                            get: { plugin.localCommandTemplate ?? "" },
+                            set: { newValue in
+                                plugin.localCommandTemplate = newValue
+                                onSave()
+                            }
+                        ))
                         .font(.system(size: 12, design: .monospaced))
                         .scrollContentBackground(.hidden)
                         .padding(8)
@@ -247,100 +345,152 @@ struct PluginEditView: View {
                                         .stroke(Color.primary.opacity(0.1), lineWidth: 1)
                                 }
                         }
-                        .frame(minHeight: 120)
-                        .onChange(of: plugin.prompt) { _, _ in onSave() }
+                        .frame(minHeight: 84)
 
-                    // Placeholder hints
-                    HStack(spacing: 6) {
-                        Text(UIString("Placeholders:"))
-                            .font(.system(size: 10))
+                        Text(UIString("Example: open {selected_text}"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(UIString("Placeholders: {selected_text}, {user_input}, {source}, {target}"))
+                            .font(.caption)
                             .foregroundStyle(.tertiary)
-                        PlaceholderChip("{selected_text}")
-                        PlaceholderChip("{user_input}")
-                        PlaceholderChip("{source}")
-                        PlaceholderChip("{target}")
-                    }
-                }
 
-                // User Input toggle
-                VStack(alignment: .leading, spacing: 4) {
-                    Toggle(UIString("Requires user input"), isOn: $plugin.needsUserInput)
-                        .onChange(of: plugin.needsUserInput) { _, _ in onSave() }
+                        Toggle(UIString("Show result window"), isOn: $plugin.showResultPanel)
+                            .onChange(of: plugin.showResultPanel) { _, _ in onSave() }
 
-                    if plugin.needsUserInput {
-                        TextField(
-                            UIString("Input placeholder"),
-                            text: Binding(
-                                get: { plugin.userInputPlaceholder ?? "" },
-                                set: { plugin.userInputPlaceholder = $0.isEmpty ? nil : $0 }
+                        Text(UIString("When disabled, the local action runs without opening the result window. Errors are still shown."))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+
+                        Toggle(UIString("Requires user input"), isOn: $plugin.needsUserInput)
+                            .onChange(of: plugin.needsUserInput) { _, _ in onSave() }
+
+                        if plugin.needsUserInput {
+                            TextField(
+                                UIString("Input placeholder"),
+                                text: Binding(
+                                    get: { plugin.userInputPlaceholder ?? "" },
+                                    set: { plugin.userInputPlaceholder = $0.isEmpty ? nil : $0 }
+                                )
                             )
-                        )
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                        .onChange(of: plugin.userInputPlaceholder) { _, _ in onSave() }
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+                            .onChange(of: plugin.userInputPlaceholder) { _, _ in onSave() }
+                        }
                     }
-                }
+                } else {
+                    // Prompt
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(UIString("System Prompt"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
-                // Language controls toggle
-                VStack(alignment: .leading, spacing: 4) {
-                    Toggle(UIString("Show source/target language controls"), isOn: $plugin.showLanguageControls)
-                        .onChange(of: plugin.showLanguageControls) { _, _ in onSave() }
+                        TextEditor(text: $plugin.prompt)
+                            .font(.system(size: 12, design: .monospaced))
+                            .scrollContentBackground(.hidden)
+                            .padding(8)
+                            .background {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color(nsColor: .textBackgroundColor))
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                            .stroke(Color.primary.opacity(0.1), lineWidth: 1)
+                                    }
+                            }
+                            .frame(minHeight: 120)
+                            .onChange(of: plugin.prompt) { _, _ in onSave() }
 
-                    Text(UIString("When enabled, source and target language selectors appear in the result panel header."))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
+                        // Placeholder hints
+                        HStack(spacing: 6) {
+                            Text(UIString("Placeholders:"))
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                            PlaceholderChip("{selected_text}")
+                            PlaceholderChip("{user_input}")
+                            PlaceholderChip("{source}")
+                            PlaceholderChip("{target}")
+                        }
+                    }
 
-                // Action buttons
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(UIString("Result Actions"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    // User Input toggle
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(UIString("Requires user input"), isOn: $plugin.needsUserInput)
+                            .onChange(of: plugin.needsUserInput) { _, _ in onSave() }
 
-                    Toggle(UIString("Copy"), isOn: Binding(
-                        get: { plugin.enabledActions.contains(.copy) },
-                        set: { enabled in
-                            if enabled { plugin.enabledActions.insert(.copy) }
-                            else { plugin.enabledActions.remove(.copy) }
-                            onSave()
+                        if plugin.needsUserInput {
+                            TextField(
+                                UIString("Input placeholder"),
+                                text: Binding(
+                                    get: { plugin.userInputPlaceholder ?? "" },
+                                    set: { plugin.userInputPlaceholder = $0.isEmpty ? nil : $0 }
+                                )
+                            )
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+                            .onChange(of: plugin.userInputPlaceholder) { _, _ in onSave() }
                         }
-                    ))
-                    Toggle(UIString("Insert"), isOn: Binding(
-                        get: { plugin.enabledActions.contains(.insert) },
-                        set: { enabled in
-                            if enabled { plugin.enabledActions.insert(.insert) }
-                            else { plugin.enabledActions.remove(.insert) }
-                            onSave()
-                        }
-                    ))
-                    Toggle(UIString("Replace"), isOn: Binding(
-                        get: { plugin.enabledActions.contains(.replace) },
-                        set: { enabled in
-                            if enabled { plugin.enabledActions.insert(.replace) }
-                            else { plugin.enabledActions.remove(.replace) }
-                            onSave()
-                        }
-                    ))
-                    Toggle(UIString("Regenerate"), isOn: Binding(
-                        get: { plugin.enabledActions.contains(.regenerate) },
-                        set: { enabled in
-                            if enabled { plugin.enabledActions.insert(.regenerate) }
-                            else { plugin.enabledActions.remove(.regenerate) }
-                            onSave()
-                        }
-                    ))
-                    Toggle(UIString("Follow-up"), isOn: Binding(
-                        get: { plugin.enabledActions.contains(.followUp) },
-                        set: { enabled in
-                            if enabled { plugin.enabledActions.insert(.followUp) }
-                            else { plugin.enabledActions.remove(.followUp) }
-                            onSave()
-                        }
-                    ))
+                    }
 
-                    Text(UIString("Choose which action buttons appear at the bottom of the result panel."))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                    // Language controls toggle
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(UIString("Show source/target language controls"), isOn: $plugin.showLanguageControls)
+                            .onChange(of: plugin.showLanguageControls) { _, _ in onSave() }
+
+                        Text(UIString("When enabled, source and target language selectors appear in the result panel header."))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    // Action buttons
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(UIString("Result Actions"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Toggle(UIString("Copy"), isOn: Binding(
+                            get: { plugin.enabledActions.contains(.copy) },
+                            set: { enabled in
+                                if enabled { plugin.enabledActions.insert(.copy) }
+                                else { plugin.enabledActions.remove(.copy) }
+                                onSave()
+                            }
+                        ))
+                        Toggle(UIString("Insert"), isOn: Binding(
+                            get: { plugin.enabledActions.contains(.insert) },
+                            set: { enabled in
+                                if enabled { plugin.enabledActions.insert(.insert) }
+                                else { plugin.enabledActions.remove(.insert) }
+                                onSave()
+                            }
+                        ))
+                        Toggle(UIString("Replace"), isOn: Binding(
+                            get: { plugin.enabledActions.contains(.replace) },
+                            set: { enabled in
+                                if enabled { plugin.enabledActions.insert(.replace) }
+                                else { plugin.enabledActions.remove(.replace) }
+                                onSave()
+                            }
+                        ))
+                        Toggle(UIString("Regenerate"), isOn: Binding(
+                            get: { plugin.enabledActions.contains(.regenerate) },
+                            set: { enabled in
+                                if enabled { plugin.enabledActions.insert(.regenerate) }
+                                else { plugin.enabledActions.remove(.regenerate) }
+                                onSave()
+                            }
+                        ))
+                        Toggle(UIString("Follow-up"), isOn: Binding(
+                            get: { plugin.enabledActions.contains(.followUp) },
+                            set: { enabled in
+                                if enabled { plugin.enabledActions.insert(.followUp) }
+                                else { plugin.enabledActions.remove(.followUp) }
+                                onSave()
+                            }
+                        ))
+
+                        Text(UIString("Choose which action buttons appear at the bottom of the result panel."))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
 
                 Divider()

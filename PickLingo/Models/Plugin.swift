@@ -2,6 +2,18 @@ import Foundation
 
 // MARK: - Action Options
 
+enum PluginExecutionMode: String, Codable, Hashable {
+    case ai
+    case localAction
+}
+
+enum LocalActionType: String, Codable, Hashable {
+    case openURLOrPathInDefaultApp
+    case openURLInDefaultBrowser
+    case openPathInDefaultApp
+    case revealPathInFinder
+}
+
 struct ActionOptions: OptionSet, Codable, Hashable {
     let rawValue: Int
 
@@ -39,6 +51,19 @@ struct Plugin: Identifiable, Codable, Equatable, Hashable {
     /// Whether to show source/target language selectors in the result panel header.
     var showLanguageControls: Bool
 
+    /// Whether to show the result panel after executing the plugin.
+    var showResultPanel: Bool
+
+    /// Execution mode. `.ai` uses OpenAI service; `.localAction` runs deterministic local actions.
+    var executionMode: PluginExecutionMode
+
+    /// Local command template for `.localAction` plugins. Supports placeholders:
+    /// {selected_text}, {user_input}, {source}, {target}
+    var localCommandTemplate: String?
+
+    /// Deprecated. Kept for backward compatibility and migrated to `localCommandTemplate`.
+    var localAction: LocalActionType?
+
     // MARK: - Backward-compatible decoding
 
     init(
@@ -46,7 +71,11 @@ struct Plugin: Identifiable, Codable, Equatable, Hashable {
         isEnabled: Bool, order: Int, isBuiltIn: Bool, needsUserInput: Bool,
         userInputPlaceholder: String?, builtInID: String?,
         enabledActions: ActionOptions = .all,
-        showLanguageControls: Bool = false
+        showLanguageControls: Bool = false,
+        showResultPanel: Bool = true,
+        executionMode: PluginExecutionMode = .ai,
+        localCommandTemplate: String? = nil,
+        localAction: LocalActionType? = nil
     ) {
         self.id = id
         self.name = name
@@ -60,6 +89,10 @@ struct Plugin: Identifiable, Codable, Equatable, Hashable {
         self.builtInID = builtInID
         self.enabledActions = enabledActions
         self.showLanguageControls = showLanguageControls
+        self.showResultPanel = showResultPanel
+        self.executionMode = executionMode
+        self.localCommandTemplate = localCommandTemplate
+        self.localAction = localAction
     }
 
     // Decode with defaults for older JSON that lacks the new keys
@@ -77,6 +110,38 @@ struct Plugin: Identifiable, Codable, Equatable, Hashable {
         builtInID = try c.decodeIfPresent(String.self, forKey: .builtInID)
         enabledActions = try c.decodeIfPresent(ActionOptions.self, forKey: .enabledActions) ?? .all
         showLanguageControls = try c.decodeIfPresent(Bool.self, forKey: .showLanguageControls) ?? false
+        showResultPanel = try c.decodeIfPresent(Bool.self, forKey: .showResultPanel) ?? true
+        localCommandTemplate = try c.decodeIfPresent(String.self, forKey: .localCommandTemplate)
+        localAction = try c.decodeIfPresent(LocalActionType.self, forKey: .localAction)
+        executionMode = try c.decodeIfPresent(PluginExecutionMode.self, forKey: .executionMode)
+            ?? Self.legacyExecutionMode(
+                builtInID: builtInID,
+                localCommandTemplate: localCommandTemplate,
+                localAction: localAction
+            )
+    }
+
+    private static func legacyExecutionMode(
+        builtInID: String?,
+        localCommandTemplate: String?,
+        localAction: LocalActionType?
+    ) -> PluginExecutionMode {
+        let localActionBuiltInIDs: Set<String> = [
+            "open-resource",
+            "open-link",
+            "open-path",
+            "reveal-path",
+        ]
+        let hasLocalCommand = localCommandTemplate?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty == false
+        let isKnownLocalActionBuiltIn = builtInID
+            .map { localActionBuiltInIDs.contains($0) } ?? false
+
+        if localAction != nil || hasLocalCommand || isKnownLocalActionBuiltIn {
+            return .localAction
+        }
+        return .ai
     }
 }
 
@@ -171,7 +236,8 @@ extension Plugin {
             name: String(localized: "Ask"),
             icon: "bubble.left.and.text.bubble.right",
             prompt: """
-            Based on the following text, answer the user's question thoughtfully and accurately.
+            If reference text is provided, use it to answer the user's question thoughtfully and accurately.
+            If reference text is empty, answer the question directly.
 
             Text:
             {selected_text}
@@ -188,6 +254,40 @@ extension Plugin {
             enabledActions: .copyOnly,
             showLanguageControls: false
         ),
+        Plugin(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000006")!,
+            name: String(localized: "Open"),
+            icon: "safari",
+            prompt: "",
+            isEnabled: true,
+            order: 5,
+            isBuiltIn: true,
+            needsUserInput: false,
+            userInputPlaceholder: nil,
+            builtInID: "open-resource",
+            enabledActions: [],
+            showLanguageControls: false,
+            executionMode: .localAction,
+            localCommandTemplate: "open {selected_text}",
+            localAction: .openURLOrPathInDefaultApp
+        ),
+        Plugin(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000008")!,
+            name: String(localized: "Reveal Path"),
+            icon: "folder.badge.magnifyingglass",
+            prompt: "",
+            isEnabled: true,
+            order: 6,
+            isBuiltIn: true,
+            needsUserInput: false,
+            userInputPlaceholder: nil,
+            builtInID: "reveal-path",
+            enabledActions: [],
+            showLanguageControls: false,
+            executionMode: .localAction,
+            localCommandTemplate: "open -R {selected_text}",
+            localAction: .revealPathInFinder
+        ),
     ]
 
     /// Returns the default version of a built-in plugin by its builtInID.
@@ -198,6 +298,10 @@ extension Plugin {
     /// Whether this is the Translate plugin (needs special language handling).
     var isTranslatePlugin: Bool {
         builtInID == "translate"
+    }
+
+    var isLocalActionPlugin: Bool {
+        executionMode == .localAction
     }
 
     var uiDisplayName: String {
@@ -217,6 +321,8 @@ extension Plugin {
         case "polish": return ["Polish", "润色"]
         case "summarize": return ["Summarize", "总结"]
         case "ask": return ["Ask", "提问"]
+        case "open-resource", "open-link", "open-path": return ["Open", "打开"]
+        case "reveal-path": return ["Reveal Path", "在 Finder 中显示"]
         default: return []
         }
     }

@@ -35,6 +35,131 @@ enum AppTheme: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+enum QuickAskShortcutTrigger: Equatable {
+    case doubleCommandTap
+    case keyCombo(key: String, modifiers: NSEvent.ModifierFlags)
+}
+
+struct QuickAskShortcutParser {
+    static let defaultShortcut = "cmd+cmd"
+
+    static func parse(_ rawValue: String) -> QuickAskShortcutTrigger? {
+        let normalized = normalize(rawValue)
+        if normalized == defaultShortcut {
+            return .doubleCommandTap
+        }
+
+        let tokens = normalized
+            .split(separator: "+")
+            .map { String($0) }
+            .filter { !$0.isEmpty }
+        guard !tokens.isEmpty else { return nil }
+
+        var modifiers: NSEvent.ModifierFlags = []
+        var keyToken: String?
+
+        for token in tokens {
+            switch token {
+            case "cmd", "command", "⌘":
+                modifiers.insert(.command)
+            case "shift", "⇧":
+                modifiers.insert(.shift)
+            case "opt", "option", "alt", "⌥":
+                modifiers.insert(.option)
+            case "ctrl", "control", "⌃":
+                modifiers.insert(.control)
+            default:
+                guard keyToken == nil else { return nil }
+                keyToken = token
+            }
+        }
+
+        guard let keyToken, let key = canonicalKeyToken(keyToken), !modifiers.isEmpty else {
+            return nil
+        }
+        return .keyCombo(key: key, modifiers: modifiers)
+    }
+
+    static func normalize(_ rawValue: String) -> String {
+        let trimmed = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "")
+        guard !trimmed.isEmpty else { return defaultShortcut }
+        guard let parsed = parseWithoutNormalization(trimmed) else {
+            return defaultShortcut
+        }
+        return serialize(parsed)
+    }
+
+    private static func parseWithoutNormalization(_ normalized: String) -> QuickAskShortcutTrigger? {
+        if normalized == defaultShortcut {
+            return .doubleCommandTap
+        }
+
+        let tokens = normalized
+            .split(separator: "+")
+            .map { String($0) }
+            .filter { !$0.isEmpty }
+        guard !tokens.isEmpty else { return nil }
+
+        var modifiers: NSEvent.ModifierFlags = []
+        var keyToken: String?
+        for token in tokens {
+            switch token {
+            case "cmd", "command", "⌘":
+                modifiers.insert(.command)
+            case "shift", "⇧":
+                modifiers.insert(.shift)
+            case "opt", "option", "alt", "⌥":
+                modifiers.insert(.option)
+            case "ctrl", "control", "⌃":
+                modifiers.insert(.control)
+            default:
+                guard keyToken == nil else { return nil }
+                keyToken = token
+            }
+        }
+        guard let keyToken, let key = canonicalKeyToken(keyToken), !modifiers.isEmpty else {
+            return nil
+        }
+        return .keyCombo(key: key, modifiers: modifiers)
+    }
+
+    private static func serialize(_ trigger: QuickAskShortcutTrigger) -> String {
+        switch trigger {
+        case .doubleCommandTap:
+            return defaultShortcut
+        case .keyCombo(let key, let modifiers):
+            var parts: [String] = []
+            if modifiers.contains(.command) { parts.append("cmd") }
+            if modifiers.contains(.control) { parts.append("ctrl") }
+            if modifiers.contains(.option) { parts.append("opt") }
+            if modifiers.contains(.shift) { parts.append("shift") }
+            parts.append(key)
+            return parts.joined(separator: "+")
+        }
+    }
+
+    private static func canonicalKeyToken(_ token: String) -> String? {
+        switch token {
+        case "space", "spacebar":
+            return "space"
+        case "return", "enter":
+            return "return"
+        case "tab":
+            return "tab"
+        case "esc", "escape":
+            return "escape"
+        default:
+            guard token.count == 1 else { return nil }
+            guard let scalar = token.unicodeScalars.first else { return nil }
+            let allowed = CharacterSet.alphanumerics
+            return allowed.contains(scalar) ? token : nil
+        }
+    }
+}
+
 struct UILocalizer {
     private typealias Pair = (en: String, zhHans: String)
 
@@ -60,6 +185,10 @@ struct UILocalizer {
         "Auto-hide tooltip when mouse moves away": ("Auto-hide tooltip when mouse moves away", "鼠标移开后自动隐藏提示"),
         "Tooltip auto-hide distance": ("Tooltip auto-hide distance", "提示自动隐藏距离"),
         "Distance": ("Distance", "距离"),
+        "Quick Ask": ("Quick Ask", "快速提问"),
+        "Enable Quick Ask shortcut": ("Enable Quick Ask shortcut", "启用快速提问快捷键"),
+        "Quick Ask shortcut": ("Quick Ask shortcut", "快速提问快捷键"),
+        "Use cmd+cmd for double-Command tap, or shortcuts like cmd+shift+k.": ("Use cmd+cmd for double-Command tap, or shortcuts like cmd+shift+k.", "使用 cmd+cmd 表示双击 Command，或设置为 cmd+shift+k 这类快捷键。"),
         "OpenAI API": ("OpenAI API", "OpenAI API"),
         "API Key, Base URL, and Model are saved together in each preset.": ("API Key, Base URL, and Model are saved together in each preset.", "API Key、Base URL 和 Model 会一起保存到每个预设。"),
         "Presets": ("Presets", "预设"),
@@ -100,6 +229,10 @@ struct UILocalizer {
         "Placeholders:": ("Placeholders:", "占位符："),
         "Requires user input": ("Requires user input", "需要用户输入"),
         "Input placeholder": ("Input placeholder", "输入占位提示"),
+        "Show result window": ("Show result window", "显示结果窗口"),
+        "When disabled, the local action runs without opening the result window. Errors are still shown.": ("When disabled, the local action runs without opening the result window. Errors are still shown.", "关闭后，本地操作会直接执行，不打开结果窗口；错误仍会显示。"),
+        "Local Action Failed": ("Local Action Failed", "本地操作失败"),
+        "OK": ("OK", "确定"),
         "Show source/target language controls": ("Show source/target language controls", "显示源语言/目标语言控制"),
         "When enabled, source and target language selectors appear in the result panel header.": ("When enabled, source and target language selectors appear in the result panel header.", "启用后，结果面板顶部会显示源语言和目标语言选择器。"),
         "Result Actions": ("Result Actions", "结果操作"),
@@ -215,6 +348,8 @@ final class AppSettings: ObservableObject {
     @Published var thinkModeEnabled: Bool = false { didSet { persistIfNeeded() } }
     @Published var tooltipAutoDismissByDistanceEnabled: Bool = false { didSet { persistIfNeeded() } }
     @Published var tooltipDismissDistance: Double = 100 { didSet { persistIfNeeded() } }
+    @Published var quickAskEnabled: Bool = true { didSet { persistIfNeeded() } }
+    @Published var quickAskShortcut: String = QuickAskShortcutParser.defaultShortcut { didSet { persistIfNeeded() } }
     @Published var selectedModelProfileID: String = "" { didSet { persistIfNeeded() } }
     @Published var interfaceLanguage: InterfaceLanguage = .system { didSet { persistIfNeeded() } }
     @Published var appTheme: AppTheme = .system { didSet { persistIfNeeded() } }
@@ -235,6 +370,8 @@ final class AppSettings: ObservableObject {
         var thinkModeEnabled: Bool
         var tooltipAutoDismissByDistanceEnabled: Bool
         var tooltipDismissDistance: Double
+        var quickAskEnabled: Bool
+        var quickAskShortcut: String
         var selectedModelProfileID: String
         var interfaceLanguage: InterfaceLanguage
         var appTheme: AppTheme
@@ -254,6 +391,8 @@ final class AppSettings: ObservableObject {
             thinkModeEnabled: Bool,
             tooltipAutoDismissByDistanceEnabled: Bool,
             tooltipDismissDistance: Double,
+            quickAskEnabled: Bool,
+            quickAskShortcut: String,
             selectedModelProfileID: String,
             interfaceLanguage: InterfaceLanguage,
             appTheme: AppTheme,
@@ -272,6 +411,8 @@ final class AppSettings: ObservableObject {
             self.thinkModeEnabled = thinkModeEnabled
             self.tooltipAutoDismissByDistanceEnabled = tooltipAutoDismissByDistanceEnabled
             self.tooltipDismissDistance = tooltipDismissDistance
+            self.quickAskEnabled = quickAskEnabled
+            self.quickAskShortcut = QuickAskShortcutParser.normalize(quickAskShortcut)
             self.selectedModelProfileID = selectedModelProfileID
             self.interfaceLanguage = interfaceLanguage
             self.appTheme = appTheme
@@ -293,6 +434,10 @@ final class AppSettings: ObservableObject {
             thinkModeEnabled = try c.decode(Bool.self, forKey: .thinkModeEnabled)
             tooltipAutoDismissByDistanceEnabled = try c.decode(Bool.self, forKey: .tooltipAutoDismissByDistanceEnabled)
             tooltipDismissDistance = try c.decode(Double.self, forKey: .tooltipDismissDistance)
+            quickAskEnabled = try c.decodeIfPresent(Bool.self, forKey: .quickAskEnabled) ?? true
+            quickAskShortcut = QuickAskShortcutParser.normalize(
+                try c.decodeIfPresent(String.self, forKey: .quickAskShortcut) ?? QuickAskShortcutParser.defaultShortcut
+            )
             selectedModelProfileID = try c.decode(String.self, forKey: .selectedModelProfileID)
             interfaceLanguage = try c.decodeIfPresent(InterfaceLanguage.self, forKey: .interfaceLanguage) ?? .system
             appTheme = try c.decodeIfPresent(AppTheme.self, forKey: .appTheme) ?? .system
@@ -418,6 +563,8 @@ final class AppSettings: ObservableObject {
             thinkModeEnabled: thinkModeEnabled,
             tooltipAutoDismissByDistanceEnabled: tooltipAutoDismissByDistanceEnabled,
             tooltipDismissDistance: tooltipDismissDistance,
+            quickAskEnabled: quickAskEnabled,
+            quickAskShortcut: quickAskShortcut,
             selectedModelProfileID: selectedModelProfileID,
             interfaceLanguage: interfaceLanguage,
             appTheme: appTheme,
@@ -454,6 +601,8 @@ final class AppSettings: ObservableObject {
             thinkModeEnabled = persisted.thinkModeEnabled
             tooltipAutoDismissByDistanceEnabled = persisted.tooltipAutoDismissByDistanceEnabled
             tooltipDismissDistance = persisted.tooltipDismissDistance
+            quickAskEnabled = persisted.quickAskEnabled
+            quickAskShortcut = persisted.quickAskShortcut
             selectedModelProfileID = persisted.selectedModelProfileID
             interfaceLanguage = persisted.interfaceLanguage
             appTheme = persisted.appTheme
@@ -487,6 +636,12 @@ final class AppSettings: ObservableObject {
         }
         if defaults.object(forKey: "tooltipDismissDistance") != nil {
             tooltipDismissDistance = defaults.double(forKey: "tooltipDismissDistance")
+        }
+        if defaults.object(forKey: "quickAskEnabled") != nil {
+            quickAskEnabled = defaults.bool(forKey: "quickAskEnabled")
+        }
+        if let value = defaults.string(forKey: "quickAskShortcut"), !value.isEmpty {
+            quickAskShortcut = value
         }
         if let value = defaults.string(forKey: "selectedModelProfileID") {
             selectedModelProfileID = value

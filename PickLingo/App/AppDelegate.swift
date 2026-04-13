@@ -1,6 +1,7 @@
 import Cocoa
 import SwiftUI
 import Combine
+import Carbon.HIToolbox
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -13,16 +14,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingWindow: NSWindow?
     private var appSwitchObserver: Any?
     private var themeCancellable: AnyCancellable?
+    private var quickAskFlagsMonitor: Any?
+    private var quickAskKeyDownMonitor: Any?
+    private var commandTapInProgress = false
+    private var commandTapHadOtherModifiers = false
+    private var commandTapHadNonModifierKey = false
+    private var lastCommandTapTimestamp: TimeInterval = 0
+    private var commandTapCount = 0
 
     // Cached state for plugin execution
     private var pendingSelectedText: String = ""
     private var pendingOrigin: NSPoint = .zero
     private var lastActiveAppPID: pid_t = 0
+    private var lastTooltipSelectionText: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[PickLingo] App launched")
         menuBarController.setup()
         bindThemeUpdates()
+        setupQuickAskMonitoring()
 
         let granted = accessibilityMonitor.isAccessibilityGranted
         print("[PickLingo] Accessibility granted: \(granted)")
@@ -56,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showTooltip(for: text, at: origin)
         }
         accessibilityMonitor.onSelectionCleared = { [weak self] in
+            self?.lastTooltipSelectionText = nil
             let ownPID = ProcessInfo.processInfo.processIdentifier
             if NSWorkspace.shared.frontmostApplication?.processIdentifier == ownPID {
                 return
@@ -100,6 +111,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hideAll()
     }
 
+    private func setupQuickAskMonitoring() {
+        if let monitor = quickAskFlagsMonitor {
+            NSEvent.removeMonitor(monitor)
+            quickAskFlagsMonitor = nil
+        }
+        if let monitor = quickAskKeyDownMonitor {
+            NSEvent.removeMonitor(monitor)
+            quickAskKeyDownMonitor = nil
+        }
+
+        quickAskFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleQuickAskFlagsChanged(event)
+            }
+        }
+        quickAskKeyDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleQuickAskKeyDown(event)
+            }
+        }
+    }
+
     // MARK: - Tooltip
 
     private func showTooltip(for text: String, at origin: NSPoint) {
@@ -108,6 +141,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let rp = resultPanel, rp.isVisible {
             return
         }
+
+        // Only show once for the same active selection text. It resets when
+        // AccessibilityMonitor reports selection cleared.
+        if lastTooltipSelectionText == text {
+            return
+        }
+        lastTooltipSelectionText = text
 
         // Save state for later plugin execution
         pendingSelectedText = text
@@ -135,6 +175,149 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hideTooltip()
         resultPanel?.dismissIfNotPinned()
         userInputPanel?.dismiss()
+    }
+
+    // MARK: - Quick Ask
+
+    private func handleQuickAskFlagsChanged(_ event: NSEvent) {
+        guard AppSettings.shared.quickAskEnabled else {
+            resetCommandTapState()
+            return
+        }
+
+        guard resolvedQuickAskTrigger() == .doubleCommandTap else { return }
+        guard event.keyCode == UInt16(kVK_Command) || event.keyCode == UInt16(kVK_RightCommand) else { return }
+
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let isCommandPressed = flags.contains(.command)
+
+        if isCommandPressed {
+            commandTapInProgress = true
+            commandTapHadOtherModifiers = flags.contains(.shift) || flags.contains(.option) || flags.contains(.control)
+            commandTapHadNonModifierKey = false
+            return
+        }
+
+        guard commandTapInProgress else { return }
+        commandTapInProgress = false
+
+        guard !commandTapHadOtherModifiers, !commandTapHadNonModifierKey else {
+            resetCommandTapState()
+            return
+        }
+
+        let now = Date().timeIntervalSinceReferenceDate
+        if now - lastCommandTapTimestamp <= 0.35 {
+            commandTapCount += 1
+        } else {
+            commandTapCount = 1
+        }
+        lastCommandTapTimestamp = now
+
+        if commandTapCount >= 2 {
+            resetCommandTapState()
+            showQuickAskWindow()
+        }
+    }
+
+    private func handleQuickAskKeyDown(_ event: NSEvent) {
+        guard AppSettings.shared.quickAskEnabled else {
+            resetCommandTapState()
+            return
+        }
+
+        if commandTapInProgress {
+            commandTapHadNonModifierKey = true
+        }
+
+        guard !event.isARepeat else { return }
+        guard case .keyCombo(let key, let modifiers) = resolvedQuickAskTrigger() else { return }
+
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            .intersection([.command, .shift, .option, .control])
+        guard flags == modifiers else { return }
+
+        let pressedKey = normalizedEventKey(event)
+        guard pressedKey == key else { return }
+        showQuickAskWindow()
+    }
+
+    private func resetCommandTapState() {
+        commandTapInProgress = false
+        commandTapHadOtherModifiers = false
+        commandTapHadNonModifierKey = false
+        commandTapCount = 0
+        lastCommandTapTimestamp = 0
+    }
+
+    private func resolvedQuickAskTrigger() -> QuickAskShortcutTrigger {
+        QuickAskShortcutParser.parse(AppSettings.shared.quickAskShortcut) ?? .doubleCommandTap
+    }
+
+    private func normalizedEventKey(_ event: NSEvent) -> String? {
+        if event.keyCode == UInt16(kVK_Return) || event.keyCode == UInt16(kVK_ANSI_KeypadEnter) {
+            return "return"
+        }
+        if event.keyCode == UInt16(kVK_Tab) {
+            return "tab"
+        }
+        if event.keyCode == UInt16(kVK_Escape) {
+            return "escape"
+        }
+        if event.keyCode == UInt16(kVK_Space) {
+            return "space"
+        }
+        guard let chars = event.charactersIgnoringModifiers?.lowercased(), chars.count == 1 else {
+            return nil
+        }
+        return chars
+    }
+
+    private func showQuickAskWindow() {
+        guard AppSettings.shared.quickAskEnabled else { return }
+        guard let askPlugin = resolvedAskPluginForQuickAsk() else { return }
+
+        tooltipPanel?.fadeOut()
+
+        if userInputPanel == nil {
+            userInputPanel = UserInputPanelController()
+        }
+        userInputPanel?.applyCurrentTheme()
+
+        let origin = NSPoint(
+            x: NSScreen.main?.visibleFrame.midX ?? NSEvent.mouseLocation.x,
+            y: NSScreen.main?.visibleFrame.midY ?? NSEvent.mouseLocation.y
+        )
+        pendingSelectedText = ""
+        pendingOrigin = origin
+
+        userInputPanel?.onSubmit = { [weak self] userInput, thinkModeOverride in
+            self?.executePlugin(
+                askPlugin,
+                selectedText: "",
+                userInput: userInput,
+                thinkModeOverride: thinkModeOverride,
+                origin: origin
+            )
+        }
+        userInputPanel?.onCancel = { [weak self] in
+            self?.userInputPanel?.dismiss()
+        }
+
+        userInputPanel?.show(
+            plugin: askPlugin,
+            selectedText: "",
+            at: origin,
+            placeholderOverride: UIString("Type your question..."),
+            showSelectionPreview: false
+        )
+    }
+
+    private func resolvedAskPluginForQuickAsk() -> Plugin? {
+        if let ask = PluginManager.shared.plugins.first(where: { $0.builtInID == "ask" }) {
+            return ask
+        }
+        return Plugin.defaultBuiltIn(id: "ask")
     }
 
     // MARK: - Plugin Execution
@@ -183,6 +366,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         thinkModeOverride: Bool?,
         origin: NSPoint
     ) {
+        if plugin.isLocalActionPlugin && !plugin.showResultPanel {
+            executeLocalActionWithoutResultPanel(plugin, selectedText: selectedText, userInput: userInput, origin: origin)
+            return
+        }
+
         if resultPanel == nil {
             resultPanel = ResultPanelController()
         }
@@ -202,6 +390,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sourceAppPID: sourceAppPID,
             at: origin
         )
+    }
+
+    private func executeLocalActionWithoutResultPanel(
+        _ plugin: Plugin,
+        selectedText: String,
+        userInput: String?,
+        origin: NSPoint
+    ) {
+        pendingSelectedText = selectedText
+        pendingOrigin = origin
+
+        Task.detached {
+            do {
+                _ = try LocalActionExecutor.shared.execute(
+                    plugin: plugin,
+                    selectedText: selectedText,
+                    userInput: userInput,
+                    source: nil,
+                    target: nil
+                )
+            } catch {
+                await MainActor.run {
+                    self.showLocalActionFailure(error)
+                }
+            }
+        }
+    }
+
+    private func showLocalActionFailure(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = UIString("Local Action Failed")
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: UIString("OK"))
+        alert.runModal()
     }
 
     // MARK: - Actions
@@ -302,6 +525,17 @@ extension AppDelegate: NSWindowDelegate {
         }
         if (notification.object as? NSWindow) == onboardingWindow {
             onboardingWindow = nil
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let monitor = quickAskFlagsMonitor {
+            NSEvent.removeMonitor(monitor)
+            quickAskFlagsMonitor = nil
+        }
+        if let monitor = quickAskKeyDownMonitor {
+            NSEvent.removeMonitor(monitor)
+            quickAskKeyDownMonitor = nil
         }
     }
 }

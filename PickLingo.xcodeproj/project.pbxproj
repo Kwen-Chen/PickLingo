@@ -28,6 +28,7 @@
 		A10023 /* UserInputPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10023 /* UserInputPanel.swift */; };
 		A10024 /* PluginSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10024 /* PluginSettingsView.swift */; };
 		A10025 /* MarkdownContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10025 /* MarkdownContentView.swift */; };
+		A10026 /* LocalActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10026 /* LocalActionExecutor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -55,6 +56,7 @@
 		B10023 /* UserInputPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserInputPanel.swift; sourceTree = "<group>"; };
 		B10024 /* PluginSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginSettingsView.swift; sourceTree = "<group>"; };
 		B10025 /* MarkdownContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownContentView.swift; sourceTree = "<group>"; };
+		B10026 /* LocalActionExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalActionExecutor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -123,6 +125,7 @@
 				B10021 /* PluginManager.swift */,
 				B10010 /* LanguageDetector.swift */,
 				B10015 /* KeychainHelper.swift */,
+				B10026 /* LocalActionExecutor.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -243,6 +246,7 @@
 				A10023 /* UserInputPanel.swift in Sources */,
 				A10024 /* PluginSettingsView.swift in Sources */,
 				A10025 /* MarkdownContentView.swift in Sources */,
+				A10026 /* LocalActionExecutor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

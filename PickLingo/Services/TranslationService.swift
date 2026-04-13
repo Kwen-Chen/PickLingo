@@ -18,6 +18,27 @@ final class PluginExecutor {
         target: Language? = nil,
         thinkModeOverride: Bool? = nil
     ) -> AsyncThrowingStream<StreamChunk, Error> {
+        if plugin.isLocalActionPlugin {
+            return AsyncThrowingStream { continuation in
+                Task {
+                    do {
+                        let message = try LocalActionExecutor.shared.execute(
+                            plugin: plugin,
+                            selectedText: text,
+                            userInput: userInput,
+                            source: source?.nativeName,
+                            target: target?.nativeName
+                        )
+                        continuation.yield(.text(message))
+                        continuation.yield(.done)
+                        continuation.finish()
+                    } catch {
+                        continuation.finish(throwing: error)
+                    }
+                }
+            }
+        }
+
         let settings = AppSettings.shared
         let detectedSource: Language = {
             if let source { return source }
@@ -61,6 +82,16 @@ final class PluginExecutor {
         target: Language? = nil,
         thinkModeOverride: Bool? = nil
     ) async throws -> String {
+        if plugin.isLocalActionPlugin {
+            return try LocalActionExecutor.shared.execute(
+                plugin: plugin,
+                selectedText: text,
+                userInput: userInput,
+                source: source?.nativeName,
+                target: target?.nativeName
+            )
+        }
+
         let settings = AppSettings.shared
         let detectedSource: Language = {
             if let source { return source }

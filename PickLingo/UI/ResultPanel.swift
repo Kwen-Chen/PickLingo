@@ -504,15 +504,17 @@ struct ResultContentView: View {
 
     private var contentBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Source text
-            Text(viewModel.sourceText)
-                .font(.system(size: 13))
-                .foregroundStyle(.tertiary)
-                .lineLimit(3)
-                .textSelection(.enabled)
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-                .padding(.bottom, 6)
+            if !viewModel.sourceText.isEmpty {
+                // Source text
+                Text(viewModel.sourceText)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+            }
 
             // User input (for Ask-type plugins)
             if !viewModel.userInputText.isEmpty {

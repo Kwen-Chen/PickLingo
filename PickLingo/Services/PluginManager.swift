@@ -128,11 +128,118 @@ final class PluginManager: ObservableObject {
         do {
             let data = try Data(contentsOf: fileURL)
             let decoded = try JSONDecoder().decode([Plugin].self, from: data)
-            return decoded.sorted { $0.order < $1.order }
+            let sorted = decoded.sorted { $0.order < $1.order }
+            let normalizedBuiltIns = normalizeLegacyBuiltIns(in: sorted)
+            let normalized = normalizeLegacyLocalActionCommands(in: normalizedBuiltIns)
+            let merged = mergeMissingBuiltIns(into: normalized)
+            if merged != sorted {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                if let data = try? encoder.encode(merged) {
+                    try? data.write(to: fileURL, options: .atomic)
+                }
+            }
+            return merged
         } catch {
             print("[PickLingo] Failed to load plugins, using defaults: \(error)")
             return Plugin.builtInPlugins
         }
+    }
+
+    private func normalizeLegacyBuiltIns(in plugins: [Plugin]) -> [Plugin] {
+        let openResourceID = "open-resource"
+        let legacyOpenIDs: Set<String> = ["open-link", "open-path"]
+
+        var result = plugins
+        let hasOpenResource = result.contains { $0.builtInID == openResourceID }
+        let legacyIndices = result.indices.filter { index in
+            if let id = result[index].builtInID {
+                return legacyOpenIDs.contains(id)
+            }
+            return false
+        }
+
+        guard !legacyIndices.isEmpty else { return result }
+
+        if hasOpenResource {
+            result.removeAll { plugin in
+                if let builtInID = plugin.builtInID {
+                    return legacyOpenIDs.contains(builtInID)
+                }
+                return false
+            }
+            return result.sorted { $0.order < $1.order }
+        }
+
+        let legacyPlugins = legacyIndices.map { result[$0] }
+        let primary = legacyPlugins.first { $0.builtInID == "open-link" } ?? legacyPlugins[0]
+        guard let defaultOpenResource = Plugin.defaultBuiltIn(id: openResourceID) else {
+            return result
+        }
+
+        let minOrder = legacyPlugins.map(\.order).min() ?? primary.order
+        let mergedEnabled = legacyPlugins.contains { $0.isEnabled }
+
+        var transformed = defaultOpenResource
+        transformed.id = primary.id
+        transformed.order = minOrder
+        transformed.isEnabled = mergedEnabled
+        transformed.name = primary.name
+        transformed.icon = primary.icon
+        transformed.executionMode = .localAction
+        transformed.localCommandTemplate = "open {selected_text}"
+        transformed.localAction = .openURLOrPathInDefaultApp
+
+        result.removeAll { plugin in
+            if let builtInID = plugin.builtInID {
+                return legacyOpenIDs.contains(builtInID)
+            }
+            return false
+        }
+        result.append(transformed)
+        return result.sorted { $0.order < $1.order }
+    }
+
+    private func normalizeLegacyLocalActionCommands(in plugins: [Plugin]) -> [Plugin] {
+        var normalized = plugins
+        var changed = false
+
+        for index in normalized.indices {
+            guard normalized[index].executionMode == .localAction else { continue }
+            let current = normalized[index].localCommandTemplate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !current.isEmpty { continue }
+
+            normalized[index].localCommandTemplate = legacyCommandTemplate(for: normalized[index].localAction)
+            changed = true
+        }
+
+        return changed ? normalized : plugins
+    }
+
+    private func legacyCommandTemplate(for action: LocalActionType?) -> String {
+        switch action {
+        case .revealPathInFinder:
+            return "open -R {selected_text}"
+        case .openURLOrPathInDefaultApp, .openURLInDefaultBrowser, .openPathInDefaultApp, .none:
+            return "open {selected_text}"
+        }
+    }
+
+    private func mergeMissingBuiltIns(into plugins: [Plugin]) -> [Plugin] {
+        var merged = plugins
+        let existingBuiltInIDs = Set(plugins.compactMap(\.builtInID))
+        var nextOrder = (plugins.map(\.order).max() ?? -1) + 1
+
+        for builtIn in Plugin.builtInPlugins {
+            guard let builtInID = builtIn.builtInID else { continue }
+            if existingBuiltInIDs.contains(builtInID) { continue }
+            var appended = builtIn
+            appended.order = nextOrder
+            nextOrder += 1
+            merged.append(appended)
+        }
+
+        return merged.sorted { $0.order < $1.order }
     }
 
     private func reindex() {
