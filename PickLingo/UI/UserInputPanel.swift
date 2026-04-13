@@ -53,7 +53,7 @@ final class UserInputPanelController {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-        panel.isMovableByWindowBackground = false
+        panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
         panel.animationBehavior = .utilityWindow
         panel.contentView = hostingView

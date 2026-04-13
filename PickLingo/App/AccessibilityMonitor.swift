@@ -13,7 +13,6 @@ final class AccessibilityMonitor: ObservableObject {
     private var keyDownMonitor: Any?
     private var isMouseButtonDown = false
     private var mouseDownPosition: NSPoint = .zero
-    private var mouseDownInTextSelectionContext = false
     private var lastSelection: String = ""
     private var lastPollPid: pid_t = 0
     private var lastPollResult: String = ""
@@ -35,13 +34,6 @@ final class AccessibilityMonitor: ObservableObject {
     private static let positionThreshold: CGFloat = 5
     /// Minimum drag distance (in points) to treat mouse-up as a text-selection gesture.
     private static let selectionGestureThreshold: CGFloat = 3
-
-    private enum AXSelectionProbe {
-        case text(String)
-        case empty
-        case nonTextContext
-        case unsupported
-    }
 
     nonisolated var isAccessibilityGranted: Bool {
         AXIsProcessTrusted()
@@ -74,27 +66,8 @@ final class AccessibilityMonitor: ObservableObject {
         // Track mouse-down to suppress AX poll triggers during drag selection
         mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.isMouseButtonDown = true
-                let mousePos = NSEvent.mouseLocation
-                self.mouseDownPosition = mousePos
-
-                guard let frontApp = NSWorkspace.shared.frontmostApplication else {
-                    self.mouseDownInTextSelectionContext = false
-                    return
-                }
-                if frontApp.processIdentifier == ProcessInfo.processInfo.processIdentifier {
-                    self.mouseDownInTextSelectionContext = false
-                    return
-                }
-                guard AppSettings.shared.isAppEnabled(bundleID: frontApp.bundleIdentifier) else {
-                    self.mouseDownInTextSelectionContext = false
-                    return
-                }
-                self.mouseDownInTextSelectionContext = self.isLikelyTextSelectionContext(
-                    pid: frontApp.processIdentifier,
-                    at: mousePos
-                )
+                self?.isMouseButtonDown = true
+                self?.mouseDownPosition = NSEvent.mouseLocation
             }
         }
 
@@ -137,7 +110,6 @@ final class AccessibilityMonitor: ObservableObject {
             keyDownMonitor = nil
         }
         isMouseButtonDown = false
-        mouseDownInTextSelectionContext = false
         lastSelection = ""
         lastSelectionOrigin = .zero
         lastPollPid = 0
@@ -159,8 +131,12 @@ final class AccessibilityMonitor: ObservableObject {
         // Skip apps we know AX fails for — they use the mouse-up method instead
         if axFailedApps.contains(pid) { return }
 
-        switch Self.probeSelectionViaAX(pid: pid) {
-        case .text(let text):
+        let selectedText = Self.getSelectedTextViaAX(pid: pid)
+        if selectedText == nil {
+            axFailedApps.insert(pid)
+            return
+        }
+        if let text = selectedText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             // Quick dedup: if same pid + same text as last poll, skip
             if pid == lastPollPid && text == lastPollResult { return }
             lastPollPid = pid
@@ -168,67 +144,18 @@ final class AccessibilityMonitor: ObservableObject {
             // Don't trigger tooltip during mouse drag — wait for mouse-up
             guard !isMouseButtonDown else { return }
             handleDetectedText(text)
-        case .empty:
+        } else {
             // Selection became empty (e.g. user cleared selection via keyboard/delete).
             // Clear immediately so tooltip/result panel are dismissed without waiting for mouse-up.
             lastPollPid = pid
             lastPollResult = ""
             guard !isMouseButtonDown else { return }
-            let mousePos = NSEvent.mouseLocation
-            // Avoid clearing while the user is interacting with obvious non-text
-            // chrome (especially title bar drag), which would otherwise reset
-            // dedup state and cause tooltip re-popups.
-            guard isLikelyTextSelectionContext(pid: pid, at: mousePos) else { return }
             clearSelection()
-        case .nonTextContext:
-            // Focus moved to a non-text UI element (e.g. list/file item, title bar).
-            // Ignore it so we don't treat non-text selections as translatable text.
-            return
-        case .unsupported:
-            // Some apps temporarily expose non-text focused elements during
-            // title-bar/toolbar interactions. Don't permanently mark AX as failed
-            // for the whole app in that transient non-text context.
-            let mousePos = NSEvent.mouseLocation
-            if isLikelyTextSelectionContext(pid: pid, at: mousePos) {
-                axFailedApps.insert(pid)
-            }
-            return
         }
     }
 
-    nonisolated private static func axAttributeString(_ element: AXUIElement, _ attribute: CFString) -> String? {
-        var ref: CFTypeRef?
-        let status = AXUIElementCopyAttributeValue(element, attribute, &ref)
-        guard status == .success else { return nil }
-        return ref as? String
-    }
-
-    nonisolated private static func isSemanticTextElement(_ element: AXUIElement, role: String?, subrole: String?) -> Bool {
-        let textRoles: Set<String> = [
-            "AXTextArea",
-            "AXTextField",
-            "AXWebArea",
-            "AXComboBox",
-            "AXDocument",
-        ]
-        let textSubroles: Set<String> = [
-            "AXSearchField",
-        ]
-        if let role, textRoles.contains(role) { return true }
-        if let subrole, textSubroles.contains(subrole) { return true }
-
-        // Generic fallback: many genuine text containers expose selected text range.
-        var selectedRangeRef: CFTypeRef?
-        let rangeStatus = AXUIElementCopyAttributeValue(
-            element,
-            kAXSelectedTextRangeAttribute as CFString,
-            &selectedRangeRef
-        )
-        return rangeStatus == .success
-    }
-
     /// Pure function — no mutable state access; safe to call from anywhere.
-    nonisolated private static func probeSelectionViaAX(pid: pid_t) -> AXSelectionProbe {
+    nonisolated private static func getSelectedTextViaAX(pid: pid_t) -> String? {
         let appElement = AXUIElementCreateApplication(pid)
 
         var focusedElementRef: CFTypeRef?
@@ -238,18 +165,13 @@ final class AccessibilityMonitor: ObservableObject {
             &focusedElementRef
         )
         guard focusResult == .success, let focusedElement = focusedElementRef else {
-            return .unsupported
+            return nil
         }
 
         guard CFGetTypeID(focusedElement) == AXUIElementGetTypeID() else {
-            return .unsupported
+            return nil
         }
         let element = unsafeBitCast(focusedElement, to: AXUIElement.self)
-        let role = axAttributeString(element, kAXRoleAttribute as CFString)
-        let subrole = axAttributeString(element, kAXSubroleAttribute as CFString)
-        guard isSemanticTextElement(element, role: role, subrole: subrole) else {
-            return .nonTextContext
-        }
 
         var selectedTextRef: CFTypeRef?
         let textResult = AXUIElementCopyAttributeValue(
@@ -258,20 +180,18 @@ final class AccessibilityMonitor: ObservableObject {
             &selectedTextRef
         )
 
-        guard textResult == .success else { return .unsupported }
-        let text = (selectedTextRef as? String) ?? ""
-        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return .empty
+        if textResult == .success {
+            return (selectedTextRef as? String) ?? ""
         }
-        return .text(text)
+
+        // AX attribute unavailable/failed: treat as AX unsupported for this app,
+        // so caller can fall back to pasteboard strategy.
+        return nil
     }
 
     // MARK: - Mouse-up based detection (Chrome, VS Code, etc.)
 
     private func checkSelectionAfterMouseUp(at mousePos: NSPoint, clickCount: Int) {
-        let startedInTextContext = mouseDownInTextSelectionContext
-        mouseDownInTextSelectionContext = false
-
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
         if frontApp.processIdentifier == ProcessInfo.processInfo.processIdentifier { return }
         guard AppSettings.shared.isAppEnabled(bundleID: frontApp.bundleIdentifier) else {
@@ -288,43 +208,26 @@ final class AccessibilityMonitor: ObservableObject {
         let isTextSelectionContext = isLikelyTextSelectionContext(pid: pid, at: mousePos)
 
         // First try AX API
-        switch Self.probeSelectionViaAX(pid: pid) {
-        case .text(let text):
-            // Ignore obvious non-text chrome interactions (e.g. title-bar drag).
-            // Keep the current selection state so AX polling doesn't retrigger
-            // the same tooltip while the user is moving the window around.
-            guard startedInTextContext, isTextSelectionContext else {
-                return
-            }
-            guard isLikelySelectionGesture else {
+        if let text = Self.getSelectedTextViaAX(pid: pid), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard isLikelySelectionGesture, isTextSelectionContext else {
                 clearSelection()
                 return
             }
-            handleDetectedText(text, at: mousePos, allowRepeatForSameText: true)
+            handleDetectedText(text, at: mousePos)
             return
-        case .empty:
-            clearSelection()
-            return
-        case .nonTextContext:
-            return
-        case .unsupported:
-            break
         }
 
         // Fallback: simulate Cmd+C and read pasteboard
         // Only for apps where AX failed, and only when gesture likely selected text.
         if axFailedApps.contains(pid) {
-            guard startedInTextContext, isTextSelectionContext else {
-                return
-            }
-            guard isLikelySelectionGesture else {
+            guard isLikelySelectionGesture, isTextSelectionContext else {
                 clearSelection()
                 return
             }
             getSelectedTextViaPasteboard { [weak self] text in
                 guard let self else { return }
                 if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    self.handleDetectedText(text, at: mousePos, allowRepeatForSameText: true)
+                    self.handleDetectedText(text, at: mousePos)
                 } else {
                     // No text selected after mouse-up — selection was cleared
                     self.clearSelection()
@@ -349,24 +252,13 @@ final class AccessibilityMonitor: ObservableObject {
             return true
         }
 
-        func attributeString(_ element: AXUIElement, _ attribute: CFString) -> String? {
-            var ref: CFTypeRef?
-            let status = AXUIElementCopyAttributeValue(element, attribute, &ref)
-            guard status == .success else { return nil }
-            return ref as? String
+        var roleRef: CFTypeRef?
+        let roleStatus = AXUIElementCopyAttributeValue(hitElement, kAXRoleAttribute as CFString, &roleRef)
+        guard roleStatus == .success, let role = roleRef as? String else {
+            return true
         }
 
-        func parentElement(of element: AXUIElement) -> AXUIElement? {
-            var ref: CFTypeRef?
-            let status = AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &ref)
-            guard status == .success, let parent = ref else { return nil }
-            guard CFGetTypeID(parent) == AXUIElementGetTypeID() else { return nil }
-            return unsafeBitCast(parent, to: AXUIElement.self)
-        }
-
-        // Explicitly reject obvious non-text chrome areas. Check both role and
-        // subrole across a small parent chain to catch cases where hit-testing
-        // returns a nested AXGroup inside the title bar/toolbar.
+        // Explicitly reject obvious non-text chrome areas.
         let blockedRoles: Set<String> = [
             kAXWindowRole as String,
             "AXTitleBar",
@@ -377,23 +269,7 @@ final class AccessibilityMonitor: ObservableObject {
             kAXMenuRole as String,
             kAXMenuItemRole as String,
         ]
-        let blockedSubroles: Set<String> = [
-            "AXTitleBar",
-        ]
-
-        var current: AXUIElement? = hitElement
-        var depth = 0
-        while let element = current, depth < 6 {
-            if let role = attributeString(element, kAXRoleAttribute as CFString), blockedRoles.contains(role) {
-                return false
-            }
-            if let subrole = attributeString(element, kAXSubroleAttribute as CFString), blockedSubroles.contains(subrole) {
-                return false
-            }
-            current = parentElement(of: element)
-            depth += 1
-        }
-        return true
+        return !blockedRoles.contains(role)
     }
 
     private func getSelectedTextViaPasteboard(completion: @escaping @MainActor (String?) -> Void) {
@@ -428,11 +304,7 @@ final class AccessibilityMonitor: ObservableObject {
 
     // MARK: - Common handler (debounced)
 
-    private func handleDetectedText(
-        _ text: String,
-        at position: NSPoint? = nil,
-        allowRepeatForSameText: Bool = false
-    ) {
+    private func handleDetectedText(_ text: String, at position: NSPoint? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -441,7 +313,6 @@ final class AccessibilityMonitor: ObservableObject {
         // Allow re-trigger for the same text if the mouse position moved significantly
         // (indicates a new selection gesture, e.g. re-selecting the same word).
         if trimmed == lastSelection {
-            guard allowRepeatForSameText else { return }
             let dx = origin.x - lastSelectionOrigin.x
             let dy = origin.y - lastSelectionOrigin.y
             let distance = sqrt(dx * dx + dy * dy)
