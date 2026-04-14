@@ -175,10 +175,9 @@ extension Plugin {
             name: String(localized: "Explain"),
             icon: "book",
             prompt: """
-            Explain the following text clearly and concisely. Break down any complex concepts, \
-            technical terms, or jargon into simple language. Provide context where helpful.
+            清楚、简洁地用中文解释以下文本。将任何复杂概念、技术术语或行话分解成简单语言。在有帮助的地方提供上下文。
 
-            Text:
+            文本：
             {selected_text}
             """,
             isEnabled: true,
@@ -216,10 +215,9 @@ extension Plugin {
             name: String(localized: "Summarize"),
             icon: "text.quote",
             prompt: """
-            Summarize the following text concisely. Capture the key points and main ideas \
-            in a brief paragraph. Keep it clear and informative.
+            请简洁地总结以下文本。捕捉关键点和主要想法，用简短的段落表达。保持清晰和信息性。
 
-            Text:
+            文本：
             {selected_text}
             """,
             isEnabled: true,
@@ -236,8 +234,7 @@ extension Plugin {
             name: String(localized: "Ask"),
             icon: "bubble.left.and.text.bubble.right",
             prompt: """
-            If reference text is provided, use it to answer the user's question thoughtfully and accurately.
-            If reference text is empty, answer the question directly.
+            Based on the following text, answer the user's question thoughtfully and accurately.
 
             Text:
             {selected_text}
@@ -256,11 +253,11 @@ extension Plugin {
         ),
         Plugin(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000006")!,
-            name: String(localized: "Open"),
-            icon: "safari",
+            name: "打开目录",
+            icon: "folder",
             prompt: "",
-            isEnabled: true,
-            order: 5,
+            isEnabled: false,
+            order: 6,
             isBuiltIn: true,
             needsUserInput: false,
             userInputPlaceholder: nil,
@@ -273,11 +270,11 @@ extension Plugin {
         ),
         Plugin(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000008")!,
-            name: String(localized: "Reveal Path"),
-            icon: "folder.badge.magnifyingglass",
+            name: "搜索",
+            icon: "magnifyingglass",
             prompt: "",
-            isEnabled: true,
-            order: 6,
+            isEnabled: false,
+            order: 7,
             isBuiltIn: true,
             needsUserInput: false,
             userInputPlaceholder: nil,
@@ -285,10 +282,39 @@ extension Plugin {
             enabledActions: [],
             showLanguageControls: false,
             executionMode: .localAction,
-            localCommandTemplate: "open -R {selected_text}",
+            localCommandTemplate: "open 'https://www.google.com/search?q='{selected_text}",
             localAction: .revealPathInFinder
         ),
     ]
+
+    static let defaultPlugins: [Plugin] = {
+        var plugins = builtInPlugins
+        plugins.append(
+            Plugin(
+                id: UUID(uuidString: "EBFE106C-0FBC-421A-AB7E-CD93F737B97D")!,
+                name: "复制",
+                icon: "paperclip",
+                prompt: """
+                You are a helpful assistant. Process the following text:
+
+                {selected_text}
+                """,
+                isEnabled: false,
+                order: 5,
+                isBuiltIn: false,
+                needsUserInput: false,
+                userInputPlaceholder: nil,
+                builtInID: nil,
+                enabledActions: .all,
+                showLanguageControls: false,
+                showResultPanel: false,
+                executionMode: .localAction,
+                localCommandTemplate: "echo {selected_text} | pbcopy",
+                localAction: nil
+            )
+        )
+        return plugins.sorted { $0.order < $1.order }
+    }()
 
     /// Returns the default version of a built-in plugin by its builtInID.
     static func defaultBuiltIn(id: String) -> Plugin? {
@@ -305,12 +331,18 @@ extension Plugin {
     }
 
     var uiDisplayName: String {
-        guard isBuiltIn, let builtInID else { return name }
-        let defaults = Self.defaultNames(for: builtInID)
-        guard let englishDefault = defaults.first else { return name }
-        if defaults.contains(name) {
-            return UIString(englishDefault)
+        if isBuiltIn, let builtInID {
+            let defaults = Self.defaultNames(for: builtInID)
+            if let englishDefault = defaults.first, defaults.contains(name) {
+                return UIString(englishDefault)
+            }
         }
+
+        // Keep default custom plugin names bilingual as well.
+        if let englishAlias = Self.defaultCustomNameAlias(for: name) {
+            return UIString(englishAlias)
+        }
+
         return name
     }
 
@@ -321,9 +353,25 @@ extension Plugin {
         case "polish": return ["Polish", "润色"]
         case "summarize": return ["Summarize", "总结"]
         case "ask": return ["Ask", "提问"]
-        case "open-resource", "open-link", "open-path": return ["Open", "打开"]
-        case "reveal-path": return ["Reveal Path", "在 Finder 中显示"]
+        case "open-resource", "open-link", "open-path": return ["Open Folder", "打开目录", "Open", "打开"]
+        case "reveal-path": return ["Search", "搜索", "Reveal Path", "在 Finder 中显示"]
         default: return []
         }
+    }
+
+    private static func defaultCustomNameAlias(for name: String) -> String? {
+        let aliases: [[String]] = [
+            ["Copy", "复制"],
+            ["Open Folder", "打开目录"],
+            ["Search", "搜索"],
+        ]
+
+        for pair in aliases {
+            guard let english = pair.first else { continue }
+            if pair.contains(name) {
+                return english
+            }
+        }
+        return nil
     }
 }

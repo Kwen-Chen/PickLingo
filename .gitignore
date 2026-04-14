@@ -6,6 +6,7 @@
 xcuserdata/
 
 # Xcode build artifacts
+build.sh
 build/
 dist/
 DerivedData/

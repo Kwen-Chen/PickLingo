@@ -81,7 +81,7 @@ final class PluginManager: ObservableObject {
     }
 
     func resetToDefaults() {
-        plugins = Plugin.builtInPlugins
+        plugins = Plugin.defaultPlugins
         saveImmediately()
     }
 
@@ -116,7 +116,7 @@ final class PluginManager: ObservableObject {
 
     private func loadPlugins() -> [Plugin] {
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            let defaults = Plugin.builtInPlugins
+            let defaults = Plugin.defaultPlugins
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             if let data = try? encoder.encode(defaults) {
@@ -142,7 +142,7 @@ final class PluginManager: ObservableObject {
             return merged
         } catch {
             print("[PickLingo] Failed to load plugins, using defaults: \(error)")
-            return Plugin.builtInPlugins
+            return Plugin.defaultPlugins
         }
     }
 

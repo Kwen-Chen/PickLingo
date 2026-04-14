@@ -264,6 +264,8 @@ struct UILocalizer {
         "Polish": ("Polish", "润色"),
         "Summarize": ("Summarize", "总结"),
         "Ask": ("Ask", "提问"),
+        "Open Folder": ("Open Folder", "打开目录"),
+        "Search": ("Search", "搜索"),
         "English": ("English", "英语"),
         "Chinese": ("Chinese", "中文"),
         "Japanese": ("Japanese", "日语"),
