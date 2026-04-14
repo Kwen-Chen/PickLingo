@@ -136,6 +136,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Tooltip
 
     private func showTooltip(for text: String, at origin: NSPoint) {
+        #if DEBUG
+        let app = NSWorkspace.shared.frontmostApplication
+        let bid = app?.bundleIdentifier ?? "unknown"
+        let pid = app?.processIdentifier ?? 0
+        print("[PickLingo][DBG][Tooltip] showTooltip textLen=\(text.count) at (\(Int(origin.x)), \(Int(origin.y))) app=\(bid) pid=\(pid)")
+        #endif
+
         // If the result panel is currently visible, don't interrupt it
         // with a new tooltip. The user is reading/interacting with results.
         if let rp = resultPanel, rp.isVisible {

@@ -166,8 +166,16 @@ struct UILocalizer {
     private static let manualTranslations: [String: Pair] = [
         "General": ("General", "通用"),
         "Plugins": ("Plugins", "插件"),
+        "General Behavior": ("General Behavior", "基本行为"),
+        "Interface": ("Interface", "界面"),
+        "Translation": ("Translation", "翻译"),
+        "Tooltip": ("Tooltip", "提示"),
+        "Result Panel": ("Result Panel", "结果面板"),
+        "Preview result panel text": ("Preview result panel text", "结果面板字体预览"),
         "Interface language": ("Interface language", "界面语言"),
         "Theme": ("Theme", "主题"),
+        "Result panel font size": ("Result panel font size", "结果面板字体大小"),
+        "Font size": ("Font size", "字体大小"),
         "Light": ("Light", "浅色"),
         "Dark": ("Dark", "深色"),
         "Follow System": ("Follow System", "跟随系统"),
@@ -335,6 +343,7 @@ struct ModelProfile: Identifiable, Codable, Equatable {
 
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
+    static let resultPanelFontSizeRange: ClosedRange<Double> = 11...22
 
     @Published var isEnabled: Bool = true { didSet { persistIfNeeded() } }
     @Published var autoDetectLanguage: Bool = true { didSet { persistIfNeeded() } }
@@ -353,6 +362,16 @@ final class AppSettings: ObservableObject {
     @Published var selectedModelProfileID: String = "" { didSet { persistIfNeeded() } }
     @Published var interfaceLanguage: InterfaceLanguage = .system { didSet { persistIfNeeded() } }
     @Published var appTheme: AppTheme = .system { didSet { persistIfNeeded() } }
+    @Published var resultPanelFontSize: Double = 13 {
+        didSet {
+            let clamped = Self.sanitizedResultPanelFontSize(resultPanelFontSize)
+            if clamped != resultPanelFontSize {
+                resultPanelFontSize = clamped
+                return
+            }
+            persistIfNeeded()
+        }
+    }
 
     @Published private(set) var modelProfiles: [ModelProfile] = [] { didSet { persistIfNeeded() } }
     @Published private(set) var appEnabledOverrides: [String: Bool] = [:] { didSet { persistIfNeeded() } }
@@ -375,6 +394,7 @@ final class AppSettings: ObservableObject {
         var selectedModelProfileID: String
         var interfaceLanguage: InterfaceLanguage
         var appTheme: AppTheme
+        var resultPanelFontSize: Double
         var modelProfiles: [ModelProfile]
         var appEnabledOverrides: [String: Bool]
 
@@ -396,6 +416,7 @@ final class AppSettings: ObservableObject {
             selectedModelProfileID: String,
             interfaceLanguage: InterfaceLanguage,
             appTheme: AppTheme,
+            resultPanelFontSize: Double,
             modelProfiles: [ModelProfile],
             appEnabledOverrides: [String: Bool]
         ) {
@@ -416,6 +437,7 @@ final class AppSettings: ObservableObject {
             self.selectedModelProfileID = selectedModelProfileID
             self.interfaceLanguage = interfaceLanguage
             self.appTheme = appTheme
+            self.resultPanelFontSize = AppSettings.sanitizedResultPanelFontSize(resultPanelFontSize)
             self.modelProfiles = modelProfiles
             self.appEnabledOverrides = appEnabledOverrides
         }
@@ -441,6 +463,9 @@ final class AppSettings: ObservableObject {
             selectedModelProfileID = try c.decode(String.self, forKey: .selectedModelProfileID)
             interfaceLanguage = try c.decodeIfPresent(InterfaceLanguage.self, forKey: .interfaceLanguage) ?? .system
             appTheme = try c.decodeIfPresent(AppTheme.self, forKey: .appTheme) ?? .system
+            resultPanelFontSize = AppSettings.sanitizedResultPanelFontSize(
+                try c.decodeIfPresent(Double.self, forKey: .resultPanelFontSize) ?? 13
+            )
             modelProfiles = try c.decode([ModelProfile].self, forKey: .modelProfiles)
             appEnabledOverrides = try c.decodeIfPresent([String: Bool].self, forKey: .appEnabledOverrides) ?? [:]
         }
@@ -568,6 +593,7 @@ final class AppSettings: ObservableObject {
             selectedModelProfileID: selectedModelProfileID,
             interfaceLanguage: interfaceLanguage,
             appTheme: appTheme,
+            resultPanelFontSize: resultPanelFontSize,
             modelProfiles: modelProfiles,
             appEnabledOverrides: appEnabledOverrides
         )
@@ -606,6 +632,7 @@ final class AppSettings: ObservableObject {
             selectedModelProfileID = persisted.selectedModelProfileID
             interfaceLanguage = persisted.interfaceLanguage
             appTheme = persisted.appTheme
+            resultPanelFontSize = persisted.resultPanelFontSize
             modelProfiles = persisted.modelProfiles
             appEnabledOverrides = persisted.appEnabledOverrides.reduce(into: [:]) { result, entry in
                 if entry.value == false {
@@ -654,6 +681,9 @@ final class AppSettings: ObservableObject {
            let theme = AppTheme(rawValue: raw) {
             appTheme = theme
         }
+        if defaults.object(forKey: "resultPanelFontSize") != nil {
+            resultPanelFontSize = defaults.double(forKey: "resultPanelFontSize")
+        }
         if let data = defaults.data(forKey: "modelProfiles"),
            let decoded = try? JSONDecoder().decode([ModelProfile].self, from: data) {
             modelProfiles = decoded
@@ -668,5 +698,9 @@ final class AppSettings: ObservableObject {
         }
 
         save()
+    }
+
+    private static func sanitizedResultPanelFontSize(_ value: Double) -> Double {
+        min(max(value, resultPanelFontSizeRange.lowerBound), resultPanelFontSizeRange.upperBound)
     }
 }

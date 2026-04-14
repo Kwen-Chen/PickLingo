@@ -257,6 +257,7 @@ struct InlineMarkdownParser {
 /// Renders a Markdown string as a series of styled SwiftUI views.
 struct MarkdownContentView: View {
     let text: String
+    let baseFontSize: CGFloat
     @Environment(\.colorScheme) var colorScheme
 
     private var blocks: [MarkdownBlock] {
@@ -278,7 +279,7 @@ struct MarkdownContentView: View {
     private func blockView(for block: MarkdownBlock) -> some View {
         switch block {
         case .paragraph(let text):
-            Text(InlineMarkdownParser.parse(text))
+            Text(InlineMarkdownParser.parse(text, baseSize: baseFontSize))
                 .foregroundStyle(.primary)
 
         case .heading(let level, let text):
@@ -313,11 +314,11 @@ struct MarkdownContentView: View {
     private func headingView(level: Int, text: String) -> some View {
         let fontSize: CGFloat = {
             switch level {
-            case 1: return 20
-            case 2: return 17
-            case 3: return 15
-            case 4: return 14
-            default: return 13
+            case 1: return baseFontSize + 7
+            case 2: return baseFontSize + 4
+            case 3: return baseFontSize + 2
+            case 4: return baseFontSize + 1
+            default: return baseFontSize
             }
         }()
         let weight: Font.Weight = level <= 3 ? .bold : .semibold
@@ -335,14 +336,14 @@ struct MarkdownContentView: View {
         return VStack(alignment: .leading, spacing: 0) {
             if let lang = language, !lang.isEmpty {
                 Text(lang)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: max(9, baseFontSize - 3), weight: .medium))
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 10)
                     .padding(.top, 6)
                     .padding(.bottom, 2)
             }
             Text(code)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(size: max(10, baseFontSize - 1), design: .monospaced))
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, hasLang ? 6 : 8)
@@ -366,7 +367,7 @@ struct MarkdownContentView: View {
                 .fill(Color.accentColor.opacity(0.5))
                 .frame(width: 3)
 
-            Text(InlineMarkdownParser.parse(text))
+            Text(InlineMarkdownParser.parse(text, baseSize: baseFontSize))
                 .foregroundStyle(.secondary)
                 .padding(.leading, 10)
         }
@@ -380,10 +381,10 @@ struct MarkdownContentView: View {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("\u{2022}")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: baseFontSize, weight: .bold))
                         .foregroundStyle(.secondary)
                         .frame(width: 12, alignment: .center)
-                    Text(InlineMarkdownParser.parse(item))
+                    Text(InlineMarkdownParser.parse(item, baseSize: baseFontSize))
                         .foregroundStyle(.primary)
                 }
             }
@@ -395,10 +396,10 @@ struct MarkdownContentView: View {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("\(item.index).")
-                        .font(.system(size: 13))
+                        .font(.system(size: baseFontSize))
                         .foregroundStyle(.secondary)
                         .frame(minWidth: 16, alignment: .trailing)
-                    Text(InlineMarkdownParser.parse(item.text))
+                    Text(InlineMarkdownParser.parse(item.text, baseSize: baseFontSize))
                         .foregroundStyle(.primary)
                 }
             }
@@ -414,8 +415,8 @@ struct MarkdownContentView: View {
             // Header row
             HStack(spacing: 0) {
                 ForEach(0..<columnCount, id: \.self) { col in
-                    Text(InlineMarkdownParser.parse(headers[col], baseSize: 12))
-                        .font(.system(size: 12, weight: .semibold))
+                    Text(InlineMarkdownParser.parse(headers[col], baseSize: max(10, baseFontSize - 1)))
+                        .font(.system(size: max(10, baseFontSize - 1), weight: .semibold))
                         .foregroundStyle(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)
@@ -434,8 +435,8 @@ struct MarkdownContentView: View {
                 HStack(spacing: 0) {
                     ForEach(0..<columnCount, id: \.self) { col in
                         let cellText = col < row.count ? row[col] : ""
-                        Text(InlineMarkdownParser.parse(cellText, baseSize: 12))
-                            .font(.system(size: 12))
+                        Text(InlineMarkdownParser.parse(cellText, baseSize: max(10, baseFontSize - 1)))
+                            .font(.system(size: max(10, baseFontSize - 1)))
                             .foregroundStyle(.primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 8)

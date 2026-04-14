@@ -13,7 +13,12 @@ final class AccessibilityMonitor: ObservableObject {
     private var keyDownMonitor: Any?
     private var isMouseButtonDown = false
     private var mouseDownPosition: NSPoint = .zero
+    private var mouseDownWasTextSelectionContext = false
+    private var mouseDownSelectionSnapshot: String = ""
+    private var lastMouseUpPoint: NSPoint = .zero
+    private var lastMouseUpAt: TimeInterval = 0
     private var lastSelection: String = ""
+    private var lastSelectionAt: TimeInterval = 0
     private var lastPollPid: pid_t = 0
     private var lastPollResult: String = ""
 
@@ -34,6 +39,18 @@ final class AccessibilityMonitor: ObservableObject {
     private static let positionThreshold: CGFloat = 5
     /// Minimum drag distance (in points) to treat mouse-up as a text-selection gesture.
     private static let selectionGestureThreshold: CGFloat = 3
+    private var debugLogsEnabled: Bool {
+#if DEBUG
+        true
+#else
+        false
+#endif
+    }
+
+    private func debugLog(_ message: String) {
+        guard debugLogsEnabled else { return }
+        print("[PickLingo][DBG][Selection] \(message)")
+    }
 
     nonisolated var isAccessibilityGranted: Bool {
         AXIsProcessTrusted()
@@ -68,6 +85,20 @@ final class AccessibilityMonitor: ObservableObject {
             Task { @MainActor [weak self] in
                 self?.isMouseButtonDown = true
                 self?.mouseDownPosition = NSEvent.mouseLocation
+                if let self, let frontApp = NSWorkspace.shared.frontmostApplication {
+                    let snapshot = Self.getSelectedTextViaAX(pid: frontApp.processIdentifier) ?? ""
+                    self.mouseDownSelectionSnapshot = snapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+                    self.mouseDownWasTextSelectionContext = self.isLikelyTextSelectionContext(
+                        pid: frontApp.processIdentifier,
+                        at: self.mouseDownPosition
+                    )
+                    self.debugLog("mouseDown context=\(self.mouseDownWasTextSelectionContext)")
+                } else {
+                    self?.mouseDownWasTextSelectionContext = false
+                }
+                if let self {
+                    self.debugLog("mouseDown at (\(Int(self.mouseDownPosition.x)), \(Int(self.mouseDownPosition.y)))")
+                }
             }
         }
 
@@ -80,6 +111,7 @@ final class AccessibilityMonitor: ObservableObject {
             Task { @MainActor [weak self] in
                 self?.isMouseButtonDown = false
                 try? await Task.sleep(nanoseconds: 50_000_000) // 0.05s
+                self?.debugLog("mouseUp at (\(Int(mousePos.x)), \(Int(mousePos.y))), clickCount=\(clickCount)")
                 self?.checkSelectionAfterMouseUp(at: mousePos, clickCount: clickCount)
             }
         }
@@ -110,6 +142,10 @@ final class AccessibilityMonitor: ObservableObject {
             keyDownMonitor = nil
         }
         isMouseButtonDown = false
+        mouseDownWasTextSelectionContext = false
+        mouseDownSelectionSnapshot = ""
+        lastMouseUpPoint = .zero
+        lastMouseUpAt = 0
         lastSelection = ""
         lastSelectionOrigin = .zero
         lastPollPid = 0
@@ -134,6 +170,7 @@ final class AccessibilityMonitor: ObservableObject {
         let selectedText = Self.getSelectedTextViaAX(pid: pid)
         if selectedText == nil {
             axFailedApps.insert(pid)
+            debugLog("AX unavailable for pid=\(pid), switch to pasteboard fallback")
             return
         }
         if let text = selectedText, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -141,9 +178,7 @@ final class AccessibilityMonitor: ObservableObject {
             if pid == lastPollPid && text == lastPollResult { return }
             lastPollPid = pid
             lastPollResult = text
-            // Don't trigger tooltip during mouse drag — wait for mouse-up
-            guard !isMouseButtonDown else { return }
-            handleDetectedText(text)
+            // Polling keeps state only. Tooltip triggering is restricted to mouse-up path.
         } else {
             // Selection became empty (e.g. user cleared selection via keyboard/delete).
             // Clear immediately so tooltip/result panel are dismissed without waiting for mouse-up.
@@ -199,37 +234,84 @@ final class AccessibilityMonitor: ObservableObject {
             return
         }
         let pid = frontApp.processIdentifier
+        let bundleID = frontApp.bundleIdentifier ?? ""
 
         let dx = mousePos.x - mouseDownPosition.x
         let dy = mousePos.y - mouseDownPosition.y
         let dragDistance = sqrt(dx * dx + dy * dy)
+        let now = CFAbsoluteTimeGetCurrent()
+        let dupDx = mousePos.x - lastMouseUpPoint.x
+        let dupDy = mousePos.y - lastMouseUpPoint.y
+        let dupDistance = sqrt(dupDx * dupDx + dupDy * dupDy)
+        if now - lastMouseUpAt < 0.2, dupDistance < 2 {
+            debugLog("mouseUp dedup ignored")
+            return
+        }
+        lastMouseUpAt = now
+        lastMouseUpPoint = mousePos
         // Single click with nearly no movement is usually just caret placement.
         let isLikelySelectionGesture = dragDistance > Self.selectionGestureThreshold || clickCount >= 2
         let isTextSelectionContext = isLikelyTextSelectionContext(pid: pid, at: mousePos)
+        debugLog(
+            "mouseUp eval pid=\(pid) drag=\(String(format: "%.2f", dragDistance)) clickCount=\(clickCount) " +
+            "isLikelySelectionGesture=\(isLikelySelectionGesture) isTextSelectionContext=\(isTextSelectionContext)"
+        )
+        guard mouseDownWasTextSelectionContext, isTextSelectionContext else {
+            debugLog("mouseUp blocked by down/up text-context gate")
+            clearSelection()
+            return
+        }
 
         // First try AX API
         if let text = Self.getSelectedTextViaAX(pid: pid), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             guard isLikelySelectionGesture, isTextSelectionContext else {
+                debugLog("mouseUp AX path blocked by gesture/context guard")
                 clearSelection()
                 return
             }
-            handleDetectedText(text, at: mousePos)
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed != mouseDownSelectionSnapshot else {
+                debugLog("mouseUp AX path suppressed: same as mouseDown snapshot")
+                return
+            }
+            debugLog("mouseUp AX path -> handleDetectedText textLen=\(text.count)")
+            handleDetectedText(trimmed, at: mousePos)
             return
         }
 
         // Fallback: simulate Cmd+C and read pasteboard
         // Only for apps where AX failed, and only when gesture likely selected text.
         if axFailedApps.contains(pid) {
+            // Finder's Cmd+C copies file names/paths, not text selection.
+            // Disable pasteboard fallback there to avoid false positives while dragging windows.
+            if bundleID == "com.apple.finder" {
+                debugLog("mouseUp pasteboard fallback disabled for Finder")
+                clearSelection()
+                return
+            }
             guard isLikelySelectionGesture, isTextSelectionContext else {
+                debugLog("mouseUp pasteboard path blocked by gesture/context guard")
                 clearSelection()
                 return
             }
             getSelectedTextViaPasteboard { [weak self] text in
                 guard let self else { return }
                 if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    self.handleDetectedText(text, at: mousePos)
+                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard trimmed != self.mouseDownSelectionSnapshot else {
+                        self.debugLog("mouseUp pasteboard path suppressed: same as mouseDown snapshot")
+                        return
+                    }
+                    let now = CFAbsoluteTimeGetCurrent()
+                    if trimmed == self.lastSelection, (now - self.lastSelectionAt) < 5.0 {
+                        self.debugLog("mouseUp pasteboard path suppressed repeated same text within cooldown")
+                        return
+                    }
+                    self.debugLog("mouseUp pasteboard path -> handleDetectedText textLen=\(text.count)")
+                    self.handleDetectedText(trimmed, at: mousePos)
                 } else {
                     // No text selected after mouse-up — selection was cleared
+                    self.debugLog("mouseUp pasteboard path empty text -> clearSelection")
                     self.clearSelection()
                 }
             }
@@ -237,6 +319,7 @@ final class AccessibilityMonitor: ObservableObject {
         }
 
         // AX returned empty/no selection — clear
+        debugLog("mouseUp no selection -> clearSelection")
         clearSelection()
     }
 
@@ -255,21 +338,22 @@ final class AccessibilityMonitor: ObservableObject {
         var roleRef: CFTypeRef?
         let roleStatus = AXUIElementCopyAttributeValue(hitElement, kAXRoleAttribute as CFString, &roleRef)
         guard roleStatus == .success, let role = roleRef as? String else {
-            return true
+            return false
         }
-
-        // Explicitly reject obvious non-text chrome areas.
-        let blockedRoles: Set<String> = [
-            kAXWindowRole as String,
-            "AXTitleBar",
-            kAXToolbarRole as String,
-            kAXButtonRole as String,
-            kAXMenuBarRole as String,
-            kAXMenuBarItemRole as String,
-            kAXMenuRole as String,
-            kAXMenuItemRole as String,
+        let allowedRoles: Set<String> = [
+            kAXStaticTextRole as String,
+            kAXTextFieldRole as String,
+            kAXTextAreaRole as String,
+            "AXWebArea",
+            "AXDocument",
+            // Container roles that commonly host selectable text in many apps.
+            "AXScrollArea",
+            "AXGroup",
+            "AXSplitGroup",
         ]
-        return !blockedRoles.contains(role)
+        let allowed = allowedRoles.contains(role)
+        debugLog("hit role=\(role) allowed=\(allowed)")
+        return allowed
     }
 
     private func getSelectedTextViaPasteboard(completion: @escaping @MainActor (String?) -> Void) {
@@ -320,7 +404,9 @@ final class AccessibilityMonitor: ObservableObject {
         }
 
         lastSelection = trimmed
+        lastSelectionAt = CFAbsoluteTimeGetCurrent()
         lastSelectionOrigin = origin
+        debugLog("handleDetectedText accepted len=\(trimmed.count) at (\(Int(origin.x)), \(Int(origin.y)))")
 
         // Debounce: cancel previous pending callback, schedule new one
         debounceWorkItem?.cancel()
@@ -337,6 +423,7 @@ final class AccessibilityMonitor: ObservableObject {
     func clearSelection() {
         if !lastSelection.isEmpty {
             lastSelection = ""
+            lastSelectionAt = 0
             lastSelectionOrigin = .zero
             lastPollPid = 0
             lastPollResult = ""

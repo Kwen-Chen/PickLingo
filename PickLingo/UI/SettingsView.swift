@@ -36,34 +36,16 @@ struct GeneralSettingsTab: View {
 
     var body: some View {
         Form {
-            // Behavior
-            Section {
+            Section(header: Text(UIString("General Behavior"))) {
                 Toggle(UIString("Enable PickLingo"), isOn: $settings.isEnabled)
-
                 Toggle(UIString("Auto-detect source language"), isOn: $settings.autoDetectLanguage)
-
-                Toggle(UIString("Enable Quick Ask shortcut"), isOn: $settings.quickAskEnabled)
-
-                HStack(spacing: 8) {
-                    Text(UIString("Quick Ask shortcut"))
-                    TextField(QuickAskShortcutParser.defaultShortcut, text: $settings.quickAskShortcut)
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(!settings.quickAskEnabled)
-                        .onSubmit {
-                            settings.quickAskShortcut = QuickAskShortcutParser.normalize(settings.quickAskShortcut)
-                        }
-                }
-
-                Text(UIString("Use cmd+cmd for double-Command tap, or shortcuts like cmd+shift+k."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 Toggle(UIString("Launch at login"), isOn: $settings.launchAtLogin)
                     .onChange(of: settings.launchAtLogin) { _, enabled in
                         updateLaunchAtLogin(enabled: enabled)
                     }
+            }
 
+            Section(header: Text(UIString("Interface"))) {
                 Picker(UIString("Interface language"), selection: $settings.interfaceLanguage) {
                     Text(UIString("Follow System")).tag(InterfaceLanguage.system)
                     Text("English").tag(InterfaceLanguage.english)
@@ -77,18 +59,18 @@ struct GeneralSettingsTab: View {
                 }
             }
 
-            Section {
+            Section(header: Text(UIString("Translation"))) {
                 Picker(UIString("Default target language"), selection: $settings.defaultTargetLanguage) {
                     ForEach(Language.allCases) { lang in
                         Text(lang.uiName).tag(lang)
                     }
                 }
+            }
 
+            Section(header: Text(UIString("Tooltip"))) {
                 HStack {
                     Text(UIString("Tooltip delay"))
-                    Slider(value: $settings.tooltipDelay, in: 0.0...2.0, step: 0.1) {
-                        Text(UIString("Delay"))
-                    }
+                    Slider(value: $settings.tooltipDelay, in: 0.0...2.0, step: 0.1)
                     Text(String(format: "%.1fs", settings.tooltipDelay))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -109,6 +91,40 @@ struct GeneralSettingsTab: View {
                             .frame(width: 52, alignment: .trailing)
                     }
                 }
+            }
+
+            Section(header: Text(UIString("Result Panel"))) {
+                HStack {
+                    Text(UIString("Result panel font size"))
+                    Slider(value: $settings.resultPanelFontSize, in: AppSettings.resultPanelFontSizeRange, step: 1)
+                    Text("\(Int(settings.resultPanelFontSize))pt")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, alignment: .trailing)
+                }
+
+                Text(UIString("Preview result panel text"))
+                    .font(.system(size: CGFloat(settings.resultPanelFontSize)))
+                    .foregroundStyle(.secondary)
+            }
+
+            Section(header: Text(UIString("Quick Ask"))) {
+                Toggle(UIString("Enable Quick Ask shortcut"), isOn: $settings.quickAskEnabled)
+
+                HStack(spacing: 8) {
+                    Text(UIString("Quick Ask shortcut"))
+                    TextField(QuickAskShortcutParser.defaultShortcut, text: $settings.quickAskShortcut)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(!settings.quickAskEnabled)
+                        .onSubmit {
+                            settings.quickAskShortcut = QuickAskShortcutParser.normalize(settings.quickAskShortcut)
+                        }
+                }
+
+                Text(UIString("Use cmd+cmd for double-Command tap, or shortcuts like cmd+shift+k."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             // API Configuration

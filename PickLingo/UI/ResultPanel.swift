@@ -468,9 +468,14 @@ struct ResultContentView: View {
     private static let maxAutoScrollableContentHeight: CGFloat = 460
 
     @ObservedObject var viewModel: ResultViewModel
+    @ObservedObject private var settings = AppSettings.shared
     @Environment(\.colorScheme) var colorScheme
     @State private var bodyContentHeight: CGFloat = 0
     @State private var followUpInputText: String = ""
+
+    private var panelFontSize: CGFloat {
+        CGFloat(settings.resultPanelFontSize)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -507,7 +512,7 @@ struct ResultContentView: View {
             if !viewModel.sourceText.isEmpty {
                 // Source text
                 Text(viewModel.sourceText)
-                    .font(.system(size: 13))
+                    .font(.system(size: max(10, panelFontSize - 1)))
                     .foregroundStyle(.tertiary)
                     .lineLimit(3)
                     .textSelection(.enabled)
@@ -520,10 +525,10 @@ struct ResultContentView: View {
             if !viewModel.userInputText.isEmpty {
                 HStack(spacing: 4) {
                     Image(systemName: "questionmark.circle.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: max(9, panelFontSize - 3)))
                         .foregroundStyle(.secondary)
                     Text(viewModel.userInputText)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: max(10, panelFontSize - 1), weight: .medium))
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 14)
@@ -672,7 +677,7 @@ struct ResultContentView: View {
             DisclosureGroup {
                 ScrollView(.vertical) {
                     Text(viewModel.thinkingText)
-                        .font(.system(size: 11))
+                        .font(.system(size: max(9, panelFontSize - 2)))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
@@ -686,7 +691,7 @@ struct ResultContentView: View {
                             .controlSize(.mini)
                     }
                     Text(UIString("Thinking…"))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: max(9, panelFontSize - 2), weight: .medium))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -704,7 +709,7 @@ struct ResultContentView: View {
                 ProgressView()
                     .controlSize(.small)
                 Text(loadingLabel)
-                    .font(.system(size: 13))
+                    .font(.system(size: panelFontSize))
                     .foregroundStyle(.secondary)
             }
         } else if let error = viewModel.errorMessage {
@@ -713,11 +718,11 @@ struct ResultContentView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.orange)
                 Text(error)
-                    .font(.system(size: 12))
+                    .font(.system(size: max(10, panelFontSize - 1)))
                     .foregroundStyle(.secondary)
             }
         } else if !viewModel.resultText.isEmpty {
-            MarkdownContentView(text: viewModel.resultText)
+            MarkdownContentView(text: viewModel.resultText, baseFontSize: panelFontSize)
         }
     }
 
@@ -741,7 +746,7 @@ struct ResultContentView: View {
         HStack(spacing: 8) {
             TextField(UIString("Type your follow-up..."), text: $followUpInputText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.system(size: panelFontSize))
                 .onSubmit {
                     submitFollowUpIfValid()
                 }
