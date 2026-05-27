@@ -190,9 +190,12 @@ final class OpenAIService {
             requestBody["stream"] = true
         }
 
-        // Keep payload compatible with OpenAI-compatible backends that don't accept
-        // a `reasoning` object on chat-completions requests.
-        requestBody["reasoning"] = ["enabled": thinkMode]
+        // Only attach the `reasoning` field when Think Mode is on. Some providers
+        // (e.g. OpenRouter's Gemini 2.5+/3.x and Grok 4) treat `reasoning.enabled = false`
+        // as an attempt to disable mandatory reasoning and reject the request with 400.
+        if thinkMode {
+            requestBody["reasoning"] = ["enabled": true]
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

@@ -14,13 +14,17 @@ final class UserInputPanelController {
     private var panel: NSPanel?
     var onSubmit: ((String, Bool?) -> Void)?
     var onCancel: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
+    var onToggleEnabled: (() -> Void)?
+    var onQuit: (() -> Void)?
 
     func show(
         plugin: Plugin,
         selectedText: String,
         at origin: NSPoint,
         placeholderOverride: String? = nil,
-        showSelectionPreview: Bool = true
+        showSelectionPreview: Bool = true,
+        showQuickActions: Bool = false
     ) {
         dismiss()
 
@@ -29,12 +33,24 @@ final class UserInputPanelController {
             selectedTextPreview: String(selectedText.prefix(100)),
             showSelectionPreview: showSelectionPreview,
             placeholderOverride: placeholderOverride,
+            showQuickActions: showQuickActions,
             onSubmit: { [weak self] text, thinkModeOverride in
                 self?.onSubmit?(text, thinkModeOverride)
                 self?.dismiss()
             },
             onCancel: { [weak self] in
                 self?.onCancel?()
+                self?.dismiss()
+            },
+            onOpenSettings: { [weak self] in
+                self?.onOpenSettings?()
+                self?.dismiss()
+            },
+            onToggleEnabled: { [weak self] in
+                self?.onToggleEnabled?()
+            },
+            onQuit: { [weak self] in
+                self?.onQuit?()
                 self?.dismiss()
             }
         )
@@ -111,11 +127,16 @@ struct UserInputView: View {
     let selectedTextPreview: String
     let showSelectionPreview: Bool
     let placeholderOverride: String?
+    let showQuickActions: Bool
     let onSubmit: (String, Bool?) -> Void
     let onCancel: () -> Void
+    let onOpenSettings: () -> Void
+    let onToggleEnabled: () -> Void
+    let onQuit: () -> Void
 
     @State private var inputText: String = ""
     @State private var requestThinkModeEnabled: Bool = AppSettings.shared.thinkModeEnabled
+    @ObservedObject private var settings = AppSettings.shared
     @FocusState private var isFocused: Bool
     @Environment(\.colorScheme) var colorScheme
 
@@ -130,6 +151,9 @@ struct UserInputView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
+                if showQuickActions {
+                    enabledToggle
+                }
                 Button(action: onCancel) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14))
@@ -192,6 +216,10 @@ struct UserInputView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 14)
             }
+
+            if showQuickActions {
+                quickActionsBar
+            }
         }
         .padding(.bottom, 12)
         .frame(width: 320)
@@ -213,6 +241,75 @@ struct UserInputView: View {
         let globalThinkMode = AppSettings.shared.thinkModeEnabled
         let thinkModeOverride: Bool? = requestThinkModeEnabled == globalThinkMode ? nil : requestThinkModeEnabled
         onSubmit(trimmed, thinkModeOverride)
+    }
+
+    private var enabledToggle: some View {
+        Toggle(
+            "",
+            isOn: Binding(
+                get: { settings.isEnabled },
+                set: { _ in onToggleEnabled() }
+            )
+        )
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .labelsHidden()
+        .tint(.accentColor)
+        .help(
+            settings.isEnabled
+                ? UIString("Disable PickLingo")
+                : UIString("Enable PickLingo")
+        )
+    }
+
+    private var quickActionsBar: some View {
+        VStack(spacing: 8) {
+            Divider()
+                .padding(.horizontal, 14)
+
+            HStack(spacing: 6) {
+                quickActionButton(
+                    icon: "gearshape",
+                    label: UIString("Settings…"),
+                    action: onOpenSettings
+                )
+
+                quickActionButton(
+                    icon: "power",
+                    label: UIString("Quit PickLingo"),
+                    tint: .red,
+                    action: onQuit
+                )
+            }
+            .padding(.horizontal, 10)
+        }
+    }
+
+    private func quickActionButton(
+        icon: String,
+        label: String,
+        tint: Color = .secondary,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .medium))
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity)
+            .background {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+            }
+        }
+        .buttonStyle(.plain)
+        .help(label)
     }
 
     private var placeholderText: String {

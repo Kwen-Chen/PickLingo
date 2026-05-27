@@ -324,6 +324,8 @@ struct GeneralSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+        .toggleStyle(.switch)
+        .controlSize(.regular)
         .padding()
         .onAppear {
             syncLaunchAtLoginSettingFromSystem()

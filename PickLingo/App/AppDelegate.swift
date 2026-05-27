@@ -310,13 +310,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         userInputPanel?.onCancel = { [weak self] in
             self?.userInputPanel?.dismiss()
         }
+        userInputPanel?.onOpenSettings = { [weak self] in
+            self?.openSettings()
+        }
+        userInputPanel?.onToggleEnabled = { [weak self] in
+            self?.toggleEnabled()
+        }
+        userInputPanel?.onQuit = {
+            NSApp.terminate(nil)
+        }
 
         userInputPanel?.show(
             plugin: askPlugin,
             selectedText: "",
             at: origin,
             placeholderOverride: UIString("Type your question..."),
-            showSelectionPreview: false
+            showSelectionPreview: false,
+            showQuickActions: true
         )
     }
 
@@ -448,11 +458,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func openSettings() {
+        // For LSUIElement (accessory) apps, showing a window before the app
+        // is fully active races SwiftUI's first layout pass and can leave
+        // Toggle(.switch) thumbs measured at zero width. NSApp.activate()
+        // is asynchronous, so we activate first, then defer the actual
+        // window display to the next runloop tick once the app is stable.
+        NSApp.activate(ignoringOtherApps: true)
+
         if let window = settingsWindow {
             window.appearance = AppSettings.shared.appTheme.nsAppearance
-            window.makeKeyAndOrderFront(nil)
-            window.makeFirstResponder(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.main.async {
+                window.makeKeyAndOrderFront(nil)
+                window.makeFirstResponder(nil)
+            }
             return
         }
 
@@ -461,7 +479,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
-            defer: false
+            defer: true
         )
         window.title = UIString("PickLingo Settings")
         window.minSize = NSSize(width: 640, height: 420)
@@ -470,10 +488,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(nil)
-        NSApp.activate(ignoringOtherApps: true)
         settingsWindow = window
+
+        DispatchQueue.main.async {
+            window.makeKeyAndOrderFront(nil)
+            window.makeFirstResponder(nil)
+        }
     }
 
     private func showOnboarding() {

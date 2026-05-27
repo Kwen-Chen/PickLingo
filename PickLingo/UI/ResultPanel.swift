@@ -4,6 +4,28 @@ import SwiftUI
 // MARK: - Panel Controller
 private final class KeyableResultPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    /// Invoked when Cmd+C is pressed while there is no active text selection
+    /// in the first responder. The default Cmd+C in macOS is reserved here for
+    /// native text-selection copy so that selecting part of the result and
+    /// pressing Cmd+C copies just the selection rather than the entire result.
+    var onCopyAllRequested: (() -> Void)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == .command, event.charactersIgnoringModifiers == "c" {
+            if let textView = firstResponder as? NSTextView, textView.selectedRange.length > 0 {
+                // Defer to normal handling so the text view copies just the selection.
+                return super.performKeyEquivalent(with: event)
+            }
+            // No active selection — treat Cmd+C as "copy the entire result".
+            if let onCopyAllRequested {
+                onCopyAllRequested()
+                return true
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 @MainActor
@@ -90,6 +112,9 @@ final class ResultPanelController: NSObject, NSWindowDelegate {
             p.contentView = hv
             p.appearance = AppSettings.shared.appTheme.nsAppearance
             p.delegate = self
+            p.onCopyAllRequested = { [weak self] in
+                self?.viewModel.copyResult()
+            }
 
             updatePanelResizeLimits(p, anchorPoint: origin)
 
@@ -368,7 +393,9 @@ final class ResultViewModel: ObservableObject {
     func copyResult() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(resultText, forType: .string)
-        dismiss()
+        if !isPinned {
+            dismiss()
+        }
     }
 
     func insertResult() {
@@ -785,7 +812,12 @@ struct ResultContentView: View {
 
             HStack(spacing: 2) {
                 if actions.contains(.copy) {
-                    ActionChip(title: UIString("Copy"), icon: "doc.on.doc", shortcut: "c") {
+                    // Intentionally no Cmd+C shortcut here — Cmd+C is handled
+                    // by KeyableResultPanel.performKeyEquivalent so that
+                    // selecting part of the result and pressing Cmd+C copies
+                    // only the selection (native behavior). When no text is
+                    // selected, that override falls back to copyResult().
+                    ActionChip(title: UIString("Copy"), icon: "doc.on.doc") {
                         viewModel.copyResult()
                     }
                 }
@@ -817,10 +849,17 @@ struct ResultContentView: View {
 struct ActionChip: View {
     let title: String
     let icon: String
-    let shortcut: String
+    let shortcut: String?
     let action: () -> Void
 
     @State private var isHovered = false
+
+    init(title: String, icon: String, shortcut: String? = nil, action: @escaping () -> Void) {
+        self.title = title
+        self.icon = icon
+        self.shortcut = shortcut
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
@@ -840,6 +879,8 @@ struct ActionChip: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .keyboardShortcut(KeyEquivalent(Character(shortcut)), modifiers: .command)
+        .keyboardShortcut(
+            shortcut.flatMap { $0.first.map { KeyboardShortcut(KeyEquivalent($0), modifiers: .command) } }
+        )
     }
 }
