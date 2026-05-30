@@ -14,6 +14,7 @@ final class AccessibilityMonitor: ObservableObject {
     private var isMouseButtonDown = false
     private var mouseDownPosition: NSPoint = .zero
     private var mouseDownWasTextSelectionContext = false
+    private var mouseDownContextRole: String?
     private var mouseDownSelectionSnapshot: String = ""
     private var lastMouseUpPoint: NSPoint = .zero
     private var lastMouseUpAt: TimeInterval = 0
@@ -88,13 +89,16 @@ final class AccessibilityMonitor: ObservableObject {
                 if let self, let frontApp = NSWorkspace.shared.frontmostApplication {
                     let snapshot = Self.getSelectedTextViaAX(pid: frontApp.processIdentifier) ?? ""
                     self.mouseDownSelectionSnapshot = snapshot.trimmingCharacters(in: .whitespacesAndNewlines)
-                    self.mouseDownWasTextSelectionContext = self.isLikelyTextSelectionContext(
+                    let context = self.selectionContext(
                         pid: frontApp.processIdentifier,
                         at: self.mouseDownPosition
                     )
-                    self.debugLog("mouseDown context=\(self.mouseDownWasTextSelectionContext)")
+                    self.mouseDownWasTextSelectionContext = context.isLikelyTextSelection
+                    self.mouseDownContextRole = context.role
+                    self.debugLog("mouseDown context=\(context.isLikelyTextSelection) role=\(context.role ?? "unknown")")
                 } else {
                     self?.mouseDownWasTextSelectionContext = false
+                    self?.mouseDownContextRole = nil
                 }
                 if let self {
                     self.debugLog("mouseDown at (\(Int(self.mouseDownPosition.x)), \(Int(self.mouseDownPosition.y)))")
@@ -143,6 +147,7 @@ final class AccessibilityMonitor: ObservableObject {
         }
         isMouseButtonDown = false
         mouseDownWasTextSelectionContext = false
+        mouseDownContextRole = nil
         mouseDownSelectionSnapshot = ""
         lastMouseUpPoint = .zero
         lastMouseUpAt = 0
@@ -251,20 +256,22 @@ final class AccessibilityMonitor: ObservableObject {
         lastMouseUpPoint = mousePos
         // Single click with nearly no movement is usually just caret placement.
         let isLikelySelectionGesture = dragDistance > Self.selectionGestureThreshold || clickCount >= 2
-        let isTextSelectionContext = isLikelyTextSelectionContext(pid: pid, at: mousePos)
+        let mouseUpContext = selectionContext(pid: pid, at: mousePos)
+        let isTextSelectionContext = mouseUpContext.isLikelyTextSelection
+        let contextAllowsFallback = mouseDownWasTextSelectionContext && isTextSelectionContext
+        let menuBarCoordinateMismatch = isLikelyExternalDisplayAXMenuBarMismatch(
+            mouseDownRole: mouseDownContextRole,
+            mouseUpRole: mouseUpContext.role
+        )
         debugLog(
             "mouseUp eval pid=\(pid) drag=\(String(format: "%.2f", dragDistance)) clickCount=\(clickCount) " +
-            "isLikelySelectionGesture=\(isLikelySelectionGesture) isTextSelectionContext=\(isTextSelectionContext)"
+            "isLikelySelectionGesture=\(isLikelySelectionGesture) isTextSelectionContext=\(isTextSelectionContext) " +
+            "role=\(mouseUpContext.role ?? "unknown") menuBarCoordinateMismatch=\(menuBarCoordinateMismatch)"
         )
-        guard mouseDownWasTextSelectionContext, isTextSelectionContext else {
-            debugLog("mouseUp blocked by down/up text-context gate")
-            clearSelection()
-            return
-        }
 
         // First try AX API
         if let text = Self.getSelectedTextViaAX(pid: pid), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            guard isLikelySelectionGesture, isTextSelectionContext else {
+            guard isLikelySelectionGesture, contextAllowsFallback || menuBarCoordinateMismatch else {
                 debugLog("mouseUp AX path blocked by gesture/context guard")
                 clearSelection()
                 return
@@ -289,7 +296,7 @@ final class AccessibilityMonitor: ObservableObject {
                 clearSelection()
                 return
             }
-            guard isLikelySelectionGesture, isTextSelectionContext else {
+            guard isLikelySelectionGesture, contextAllowsFallback || menuBarCoordinateMismatch else {
                 debugLog("mouseUp pasteboard path blocked by gesture/context guard")
                 clearSelection()
                 return
@@ -326,19 +333,23 @@ final class AccessibilityMonitor: ObservableObject {
     /// Best-effort guard to avoid copy-fallback false positives from non-text UI areas
     /// (e.g. title bar double-click, toolbar clicks).
     private func isLikelyTextSelectionContext(pid: pid_t, at point: NSPoint) -> Bool {
+        selectionContext(pid: pid, at: point).isLikelyTextSelection
+    }
+
+    private func selectionContext(pid: pid_t, at point: NSPoint) -> SelectionContext {
         let appElement = AXUIElementCreateApplication(pid)
 
         var hitRef: AXUIElement?
         let hitStatus = AXUIElementCopyElementAtPosition(appElement, Float(point.x), Float(point.y), &hitRef)
         guard hitStatus == .success, let hitElement = hitRef else {
             // If we cannot determine the role, keep old behavior to avoid regressions.
-            return true
+            return SelectionContext(isLikelyTextSelection: true, role: nil)
         }
 
         var roleRef: CFTypeRef?
         let roleStatus = AXUIElementCopyAttributeValue(hitElement, kAXRoleAttribute as CFString, &roleRef)
         guard roleStatus == .success, let role = roleRef as? String else {
-            return false
+            return SelectionContext(isLikelyTextSelection: false, role: nil)
         }
         let allowedRoles: Set<String> = [
             kAXStaticTextRole as String,
@@ -353,7 +364,17 @@ final class AccessibilityMonitor: ObservableObject {
         ]
         let allowed = allowedRoles.contains(role)
         debugLog("hit role=\(role) allowed=\(allowed)")
-        return allowed
+        return SelectionContext(isLikelyTextSelection: allowed, role: role)
+    }
+
+    private func isLikelyExternalDisplayAXMenuBarMismatch(mouseDownRole: String?, mouseUpRole: String?) -> Bool {
+        guard NSScreen.screens.count > 1 else { return false }
+        return mouseDownRole == (kAXMenuBarRole as String) && mouseUpRole == (kAXMenuBarRole as String)
+    }
+
+    private struct SelectionContext {
+        let isLikelyTextSelection: Bool
+        let role: String?
     }
 
     private func getSelectedTextViaPasteboard(completion: @escaping @MainActor (String?) -> Void) {

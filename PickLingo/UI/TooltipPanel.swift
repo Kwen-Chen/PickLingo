@@ -78,8 +78,8 @@ final class TooltipPanel: NSPanel {
         setupContent()
 
         let size = self.frame.size
-        let origin = NSPoint(x: point.x - size.width / 2, y: point.y - size.height - 4)
-        self.setFrameOrigin(origin)
+        let frame = ScreenLocator.frame(for: size, anchoredAt: point, gap: 4)
+        self.setFrame(frame, display: false)
         self.alphaValue = 1.0
         self.orderFrontRegardless()
 

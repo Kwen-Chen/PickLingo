@@ -75,20 +75,10 @@ final class UserInputPanelController {
         panel.contentView = hostingView
         panel.appearance = AppSettings.shared.appTheme.nsAppearance
 
-        // Position below cursor
         let panelSize = NSSize(width: max(fittingSize.width, 320), height: max(fittingSize.height, 120))
-        var panelOrigin = NSPoint(x: origin.x - panelSize.width / 2, y: origin.y - panelSize.height - 10)
+        let panelFrame = ScreenLocator.frame(for: panelSize, anchoredAt: origin)
 
-        // Clamp to screen
-        if let screen = NSScreen.main ?? NSScreen.screens.first {
-            let sf = screen.visibleFrame
-            if panelOrigin.x + panelSize.width > sf.maxX { panelOrigin.x = sf.maxX - panelSize.width - 8 }
-            if panelOrigin.x < sf.minX { panelOrigin.x = sf.minX + 8 }
-            if panelOrigin.y < sf.minY { panelOrigin.y = origin.y + 10 }
-            if panelOrigin.y + panelSize.height > sf.maxY { panelOrigin.y = sf.maxY - panelSize.height - 8 }
-        }
-
-        panel.setFrameOrigin(panelOrigin)
+        panel.setFrame(panelFrame, display: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
 

@@ -176,9 +176,7 @@ final class ResultPanelController: NSObject, NSWindowDelegate {
     }
 
     private func updatePanelResizeLimits(_ panel: NSPanel, anchorPoint: NSPoint) {
-        let visibleFrame = screen(for: anchorPoint)?.visibleFrame
-            ?? (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
-            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let visibleFrame = ScreenLocator.visibleFrame(for: anchorPoint)
         panel.minSize = NSSize(width: Self.minPanelWidth, height: Self.minPanelHeight)
         panel.maxSize = NSSize(
             width: min(visibleFrame.width * 0.85, Self.maxPanelWidthCap),
@@ -187,30 +185,11 @@ final class ResultPanelController: NSObject, NSWindowDelegate {
     }
 
     private func screen(for point: NSPoint) -> NSScreen? {
-        NSScreen.screens.first(where: { $0.frame.contains(point) }) ?? NSScreen.main ?? NSScreen.screens.first
+        ScreenLocator.screen(for: point)
     }
 
     private func calculatePanelFrame(anchorPoint: NSPoint, panelSize: NSSize) -> NSRect {
-        var origin = NSPoint(x: anchorPoint.x - panelSize.width / 2, y: anchorPoint.y - panelSize.height - 10)
-
-        if let screen = screen(for: anchorPoint) {
-            let screenFrame = screen.visibleFrame
-
-            if origin.x + panelSize.width > screenFrame.maxX {
-                origin.x = screenFrame.maxX - panelSize.width - 8
-            }
-            if origin.x < screenFrame.minX {
-                origin.x = screenFrame.minX + 8
-            }
-            if origin.y < screenFrame.minY {
-                origin.y = anchorPoint.y + 10
-            }
-            if origin.y + panelSize.height > screenFrame.maxY {
-                origin.y = screenFrame.maxY - panelSize.height - 8
-            }
-        }
-
-        return NSRect(origin: origin, size: panelSize)
+        ScreenLocator.frame(for: panelSize, anchoredAt: anchorPoint)
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {

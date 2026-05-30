@@ -291,10 +291,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         userInputPanel?.applyCurrentTheme()
 
-        let origin = NSPoint(
-            x: NSScreen.main?.visibleFrame.midX ?? NSEvent.mouseLocation.x,
-            y: NSScreen.main?.visibleFrame.midY ?? NSEvent.mouseLocation.y
-        )
+        let mouseLocation = NSEvent.mouseLocation
+        let visibleFrame = ScreenLocator.visibleFrame(for: mouseLocation)
+        let origin = NSPoint(x: visibleFrame.midX, y: visibleFrame.midY)
         pendingSelectedText = ""
         pendingOrigin = origin
 
