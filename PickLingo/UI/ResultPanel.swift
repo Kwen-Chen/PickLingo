@@ -1,4 +1,5 @@
 import Cocoa
+import Carbon
 import SwiftUI
 
 // MARK: - Panel Controller
@@ -10,6 +11,25 @@ private final class KeyableResultPanel: NSPanel {
     /// native text-selection copy so that selecting part of the result and
     /// pressing Cmd+C copies just the selection rather than the entire result.
     var onCopyAllRequested: (() -> Void)?
+    var onFocusFollowUpRequested: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == UInt16(kVK_Return) || event.keyCode == UInt16(kVK_ANSI_KeypadEnter) {
+            if !isEditingTextField {
+                onFocusFollowUpRequested?()
+                return
+            }
+        }
+
+        super.keyDown(with: event)
+    }
+
+    private var isEditingTextField: Bool {
+        guard let textView = firstResponder as? NSTextView else {
+            return false
+        }
+        return textView.isFieldEditor
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -70,7 +90,12 @@ final class ResultPanelController: NSObject, NSWindowDelegate {
             self?.dismiss()
         }
 
-        let resultView = ResultContentView(viewModel: viewModel)
+        let resultView = ResultContentView(
+            viewModel: viewModel,
+            onFocusFollowUpRequested: { [weak self] in
+                self?.scheduleFollowUpFocus()
+            }
+        )
 
         if let panel, let hostingView {
             // Reuse existing panel — just swap the root view
@@ -114,6 +139,9 @@ final class ResultPanelController: NSObject, NSWindowDelegate {
             p.delegate = self
             p.onCopyAllRequested = { [weak self] in
                 self?.viewModel.copyResult()
+            }
+            p.onFocusFollowUpRequested = { [weak self] in
+                self?.focusFollowUpInput()
             }
 
             updatePanelResizeLimits(p, anchorPoint: origin)
@@ -196,6 +224,50 @@ final class ResultPanelController: NSObject, NSWindowDelegate {
         guard let panel else { return }
         panelOrigin = NSPoint(x: panel.frame.midX, y: panel.frame.maxY + 10)
     }
+
+    private func scheduleFollowUpFocus() {
+        DispatchQueue.main.async { [weak self] in
+            self?.focusFollowUpInput()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.focusFollowUpInput()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.focusFollowUpInput()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.focusFollowUpInput()
+        }
+    }
+
+    private func focusFollowUpInput() {
+        guard let panel,
+              let textField = panel.contentView?.firstTextField(
+                withPlaceholder: UIString("Type your follow-up...")
+              ) else {
+            return
+        }
+        panel.makeKey()
+        panel.makeFirstResponder(textField)
+        textField.currentEditor()?.moveToEndOfDocument(nil)
+    }
+}
+
+private extension NSView {
+    func firstTextField(withPlaceholder placeholder: String) -> NSTextField? {
+        if let textField = self as? NSTextField,
+           textField.placeholderString == placeholder {
+            return textField
+        }
+
+        for subview in subviews {
+            if let match = subview.firstTextField(withPlaceholder: placeholder) {
+                return match
+            }
+        }
+
+        return nil
+    }
 }
 
 struct BodyContentHeightPreferenceKey: PreferenceKey {
@@ -218,6 +290,7 @@ final class ResultViewModel: ObservableObject {
     @Published var isThinking: Bool = false
     @Published var errorMessage: String?
     @Published var isPinned: Bool = false
+    @Published private(set) var followUpFocusRequestID: Int = 0
 
     // Plugin info
     @Published var currentPlugin: Plugin?
@@ -331,6 +404,7 @@ final class ResultViewModel: ObservableObject {
                     }
                     latestAnswerText = latestChunkedAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
                     isLoading = false
+                    requestFollowUpFocusIfAvailable()
                 } catch {
                     if !Task.isCancelled {
                         errorMessage = error.localizedDescription
@@ -365,8 +439,18 @@ final class ResultViewModel: ObservableObject {
                     }
                 }
                 isLoading = false
+                requestFollowUpFocusIfAvailable()
             }
         }
+    }
+
+    private func requestFollowUpFocusIfAvailable() {
+        guard errorMessage == nil,
+              currentPlugin?.enabledActions.contains(.followUp) == true,
+              !resultText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        followUpFocusRequestID += 1
     }
 
     func copyResult() {
@@ -474,10 +558,12 @@ struct ResultContentView: View {
     private static let maxAutoScrollableContentHeight: CGFloat = 460
 
     @ObservedObject var viewModel: ResultViewModel
+    let onFocusFollowUpRequested: () -> Void
     @ObservedObject private var settings = AppSettings.shared
     @Environment(\.colorScheme) var colorScheme
     @State private var bodyContentHeight: CGFloat = 0
     @State private var followUpInputText: String = ""
+    @FocusState private var isFollowUpFocused: Bool
 
     private var panelFontSize: CGFloat {
         CGFloat(settings.resultPanelFontSize)
@@ -503,6 +589,22 @@ struct ResultContentView: View {
         .frame(minWidth: viewModel.minPanelWidth, maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(BodyContentHeightPreferenceKey.self) { height in
             bodyContentHeight = height
+        }
+        .onChange(of: shouldShowFollowUpInput) { _, shouldFocus in
+            guard shouldFocus else { return }
+            focusFollowUpInput()
+        }
+        .onChange(of: viewModel.isLoading) { _, isLoading in
+            guard !isLoading, shouldShowFollowUpInput else { return }
+            focusFollowUpInput()
+        }
+        .onChange(of: viewModel.resultText) { _, _ in
+            guard shouldShowFollowUpInput else { return }
+            focusFollowUpInput()
+        }
+        .onChange(of: viewModel.followUpFocusRequestID) { _, _ in
+            guard shouldShowFollowUpInput else { return }
+            focusFollowUpInput()
         }
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -753,6 +855,7 @@ struct ResultContentView: View {
             TextField(UIString("Type your follow-up..."), text: $followUpInputText)
                 .textFieldStyle(.plain)
                 .font(.system(size: panelFontSize))
+                .focused($isFollowUpFocused)
                 .onSubmit {
                     submitFollowUpIfValid()
                 }
@@ -777,7 +880,13 @@ struct ResultContentView: View {
         let text = followUpInputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         followUpInputText = ""
+        isFollowUpFocused = false
         viewModel.submitFollowUp(text)
+    }
+
+    private func focusFollowUpInput() {
+        isFollowUpFocused = true
+        onFocusFollowUpRequested()
     }
 
     // MARK: - Action Bar

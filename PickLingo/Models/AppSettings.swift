@@ -197,6 +197,8 @@ struct UILocalizer {
         "Enable Quick Ask shortcut": ("Enable Quick Ask shortcut", "启用快速提问快捷键"),
         "Quick Ask shortcut": ("Quick Ask shortcut", "快速提问快捷键"),
         "Use cmd+cmd for double-Command tap, or shortcuts like cmd+shift+k.": ("Use cmd+cmd for double-Command tap, or shortcuts like cmd+shift+k.", "使用 cmd+cmd 表示双击 Command，或设置为 cmd+shift+k 这类快捷键。"),
+        "Quick Ask prompt": ("Quick Ask prompt", "快速提问提示词"),
+        "Use {user_input} where the typed question should be inserted.": ("Use {user_input} where the typed question should be inserted.", "使用 {user_input} 表示输入的问题插入位置。"),
         "OpenAI API": ("OpenAI API", "OpenAI API"),
         "API Key, Base URL, and Model are saved together in each preset.": ("API Key, Base URL, and Model are saved together in each preset.", "API Key、Base URL 和 Model 会一起保存到每个预设。"),
         "Presets": ("Presets", "预设"),
@@ -346,6 +348,12 @@ struct ModelProfile: Identifiable, Codable, Equatable {
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
     static let resultPanelFontSizeRange: ClosedRange<Double> = 11...22
+    static let defaultQuickAskPrompt = """
+    Answer the user's question thoughtfully and accurately.
+
+    Question:
+    {user_input}
+    """
 
     @Published var isEnabled: Bool = true { didSet { persistIfNeeded() } }
     @Published var autoDetectLanguage: Bool = true { didSet { persistIfNeeded() } }
@@ -361,6 +369,7 @@ final class AppSettings: ObservableObject {
     @Published var tooltipDismissDistance: Double = 100 { didSet { persistIfNeeded() } }
     @Published var quickAskEnabled: Bool = true { didSet { persistIfNeeded() } }
     @Published var quickAskShortcut: String = QuickAskShortcutParser.defaultShortcut { didSet { persistIfNeeded() } }
+    @Published var quickAskPrompt: String = AppSettings.defaultQuickAskPrompt { didSet { persistIfNeeded() } }
     @Published var selectedModelProfileID: String = "" { didSet { persistIfNeeded() } }
     @Published var interfaceLanguage: InterfaceLanguage = .system { didSet { persistIfNeeded() } }
     @Published var appTheme: AppTheme = .system { didSet { persistIfNeeded() } }
@@ -393,6 +402,7 @@ final class AppSettings: ObservableObject {
         var tooltipDismissDistance: Double
         var quickAskEnabled: Bool
         var quickAskShortcut: String
+        var quickAskPrompt: String
         var selectedModelProfileID: String
         var interfaceLanguage: InterfaceLanguage
         var appTheme: AppTheme
@@ -415,6 +425,7 @@ final class AppSettings: ObservableObject {
             tooltipDismissDistance: Double,
             quickAskEnabled: Bool,
             quickAskShortcut: String,
+            quickAskPrompt: String,
             selectedModelProfileID: String,
             interfaceLanguage: InterfaceLanguage,
             appTheme: AppTheme,
@@ -436,6 +447,9 @@ final class AppSettings: ObservableObject {
             self.tooltipDismissDistance = tooltipDismissDistance
             self.quickAskEnabled = quickAskEnabled
             self.quickAskShortcut = QuickAskShortcutParser.normalize(quickAskShortcut)
+            self.quickAskPrompt = quickAskPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? AppSettings.defaultQuickAskPrompt
+                : quickAskPrompt
             self.selectedModelProfileID = selectedModelProfileID
             self.interfaceLanguage = interfaceLanguage
             self.appTheme = appTheme
@@ -462,6 +476,10 @@ final class AppSettings: ObservableObject {
             quickAskShortcut = QuickAskShortcutParser.normalize(
                 try c.decodeIfPresent(String.self, forKey: .quickAskShortcut) ?? QuickAskShortcutParser.defaultShortcut
             )
+            let decodedQuickAskPrompt = try c.decodeIfPresent(String.self, forKey: .quickAskPrompt) ?? AppSettings.defaultQuickAskPrompt
+            quickAskPrompt = decodedQuickAskPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? AppSettings.defaultQuickAskPrompt
+                : decodedQuickAskPrompt
             selectedModelProfileID = try c.decode(String.self, forKey: .selectedModelProfileID)
             interfaceLanguage = try c.decodeIfPresent(InterfaceLanguage.self, forKey: .interfaceLanguage) ?? .system
             appTheme = try c.decodeIfPresent(AppTheme.self, forKey: .appTheme) ?? .system
@@ -592,6 +610,7 @@ final class AppSettings: ObservableObject {
             tooltipDismissDistance: tooltipDismissDistance,
             quickAskEnabled: quickAskEnabled,
             quickAskShortcut: quickAskShortcut,
+            quickAskPrompt: quickAskPrompt,
             selectedModelProfileID: selectedModelProfileID,
             interfaceLanguage: interfaceLanguage,
             appTheme: appTheme,
@@ -631,6 +650,7 @@ final class AppSettings: ObservableObject {
             tooltipDismissDistance = persisted.tooltipDismissDistance
             quickAskEnabled = persisted.quickAskEnabled
             quickAskShortcut = persisted.quickAskShortcut
+            quickAskPrompt = persisted.quickAskPrompt
             selectedModelProfileID = persisted.selectedModelProfileID
             interfaceLanguage = persisted.interfaceLanguage
             appTheme = persisted.appTheme
@@ -671,6 +691,9 @@ final class AppSettings: ObservableObject {
         }
         if let value = defaults.string(forKey: "quickAskShortcut"), !value.isEmpty {
             quickAskShortcut = value
+        }
+        if let value = defaults.string(forKey: "quickAskPrompt"), !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            quickAskPrompt = value
         }
         if let value = defaults.string(forKey: "selectedModelProfileID") {
             selectedModelProfileID = value

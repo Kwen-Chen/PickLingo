@@ -1,10 +1,24 @@
 import Cocoa
+import Carbon
 import SwiftUI
 
 // MARK: - Keyable Panel (allows text field to receive focus)
 
 private class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
+
+    var onFocusInputRequested: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == UInt16(kVK_Return) || event.keyCode == UInt16(kVK_ANSI_KeypadEnter) {
+            if !(firstResponder is NSTextView) {
+                onFocusInputRequested?()
+                return
+            }
+        }
+
+        super.keyDown(with: event)
+    }
 }
 
 // MARK: - Panel Controller
@@ -74,6 +88,9 @@ final class UserInputPanelController {
         panel.animationBehavior = .utilityWindow
         panel.contentView = hostingView
         panel.appearance = AppSettings.shared.appTheme.nsAppearance
+        panel.onFocusInputRequested = { [weak self] in
+            self?.focusInputField()
+        }
 
         let panelSize = NSSize(width: max(fittingSize.width, 320), height: max(fittingSize.height, 120))
         let panelFrame = ScreenLocator.frame(for: panelSize, anchoredAt: origin)
@@ -86,12 +103,13 @@ final class UserInputPanelController {
         panel.makeKey()
         NSApp.activate(ignoringOtherApps: true)
 
+        self.panel = panel
+        scheduleInputFocus()
+
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.12
             panel.animator().alphaValue = 1.0
         }
-
-        self.panel = panel
     }
 
     func applyCurrentTheme() {
@@ -107,6 +125,41 @@ final class UserInputPanelController {
             panel.orderOut(nil)
         })
         self.panel = nil
+    }
+
+    private func scheduleInputFocus() {
+        DispatchQueue.main.async { [weak self] in
+            self?.focusInputField()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.focusInputField()
+        }
+    }
+
+    private func focusInputField() {
+        guard let panel,
+              let textField = panel.contentView?.firstSubview(ofType: NSTextField.self) else {
+            return
+        }
+        panel.makeKey()
+        panel.makeFirstResponder(textField)
+        textField.currentEditor()?.moveToEndOfDocument(nil)
+    }
+}
+
+private extension NSView {
+    func firstSubview<T: NSView>(ofType type: T.Type) -> T? {
+        if let view = self as? T {
+            return view
+        }
+
+        for subview in subviews {
+            if let match = subview.firstSubview(ofType: type) {
+                return match
+            }
+        }
+
+        return nil
     }
 }
 

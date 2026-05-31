@@ -190,12 +190,9 @@ final class OpenAIService {
             requestBody["stream"] = true
         }
 
-        // Only attach the `reasoning` field when Think Mode is on. Some providers
-        // (e.g. OpenRouter's Gemini 2.5+/3.x and Grok 4) treat `reasoning.enabled = false`
-        // as an attempt to disable mandatory reasoning and reject the request with 400.
-        if thinkMode {
-            requestBody["reasoning"] = ["enabled": true]
-        }
+        // Use the provider's generic reasoning switch instead of model-specific
+        // effort levels so Think Mode works consistently across OpenAI-compatible APIs.
+        requestBody["reasoning"] = ["enabled": thinkMode]
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

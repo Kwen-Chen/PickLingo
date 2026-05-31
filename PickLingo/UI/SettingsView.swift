@@ -45,6 +45,8 @@ struct GeneralSettingsTab: View {
                     }
             }
 
+            apiConfigurationSection
+
             Section(header: Text(UIString("Interface"))) {
                 Picker(UIString("Interface language"), selection: $settings.interfaceLanguage) {
                     Text(UIString("Follow System")).tag(InterfaceLanguage.system)
@@ -125,133 +127,31 @@ struct GeneralSettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            }
 
-            // API Configuration
-            Section(header: Text(UIString("OpenAI API"))) {
-                Text(UIString("API Key, Base URL, and Model are saved together in each preset."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                HStack(alignment: .top, spacing: 12) {
-                    // Left: preset list
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(UIString("Presets"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 6) {
-                                presetRow(id: customProfileTag, title: UIString("Custom (unsaved)"))
-                                ForEach(settings.modelProfiles) { profile in
-                                    presetRow(id: profile.id, title: profile.name)
-                                }
-                            }
-                            .padding(.vertical, 2)
-                        }
-                        .frame(maxHeight: 220)
-                        .background {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.primary.opacity(0.04))
-                        }
-
-                        Button(UIString("New custom draft")) {
-                            settings.clearSelectedModelProfile()
-                            modelProfileNameDraft = UIString("My preset")
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(UIString("Quick Ask prompt"))
+                        Spacer()
+                        Button(UIString("Reset to Default")) {
+                            settings.quickAskPrompt = AppSettings.defaultQuickAskPrompt
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .disabled(!settings.quickAskEnabled)
                     }
-                    .frame(width: 180, alignment: .topLeading)
 
-                    // Right: editor panel
-                    VStack(alignment: .leading, spacing: 10) {
-                        TextField(UIString("Preset name"), text: $modelProfileNameDraft)
-                            .textFieldStyle(.roundedBorder)
-
-                        HStack {
-                            if showingKey {
-                                TextField(UIString("API Key"), text: $settings.apiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            } else {
-                                SecureField(UIString("API Key"), text: $settings.apiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            Button(action: { showingKey.toggle() }) {
-                                Image(systemName: showingKey ? "eye.slash" : "eye")
-                            }
-                            .buttonStyle(.borderless)
+                    TextEditor(text: $settings.quickAskPrompt)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 90)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
                         }
-                        .onChange(of: settings.apiKey) { _, _ in
-                            PluginExecutor.shared.refreshService()
-                            testResult = nil
-                        }
+                        .disabled(!settings.quickAskEnabled)
 
-                        TextField(UIString("API Base URL"), text: $settings.apiBaseURL)
-                            .textFieldStyle(.roundedBorder)
-                            .onChange(of: settings.apiBaseURL) { _, _ in
-                                testResult = nil
-                            }
-
-                        TextField(UIString("Model"), text: $settings.apiModel)
-                            .textFieldStyle(.roundedBorder)
-                            .onChange(of: settings.apiModel) { _, _ in
-                                testResult = nil
-                            }
-
-                        HStack(spacing: 8) {
-                            Spacer()
-
-                            Button(UIString("Save")) {
-                                saveAsNewPreset()
-                            }
-                            .disabled(!canSaveAsNewPreset)
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-
-                            Button(UIString("Update")) {
-                                updateSelectedPreset()
-                            }
-                            .disabled(!canUpdateSelectedPreset)
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-
-                            Button(UIString("Delete"), role: .destructive) {
-                                settings.deleteSelectedModelProfile()
-                                syncPresetDraft()
-                            }
-                            .disabled(settings.selectedModelProfile == nil)
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-
-                        HStack(spacing: 8) {
-                            Spacer()
-
-                            Button(action: testAPIConnection) {
-                                HStack(spacing: 4) {
-                                    if isTesting {
-                                        ProgressView()
-                                            .controlSize(.small)
-                                    } else {
-                                        Image(systemName: "bolt.fill")
-                                            .font(.system(size: 10))
-                                    }
-                                    Text(UIString("Test Connection"))
-                                        .font(.system(size: 12))
-                                }
-                            }
-                            .disabled(isTesting || settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-
-                            if let result = testResult {
-                                testResultLabel(result)
-                            }
-
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    Text(UIString("Use {user_input} where the typed question should be inserted."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -347,6 +247,135 @@ struct GeneralSettingsTab: View {
     private var canUpdateSelectedPreset: Bool {
         guard settings.selectedModelProfile != nil else { return false }
         return canSaveAsNewPreset
+    }
+
+    // API Configuration
+    private var apiConfigurationSection: some View {
+        Section(header: Text(UIString("OpenAI API"))) {
+            Text(UIString("API Key, Base URL, and Model are saved together in each preset."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .top, spacing: 12) {
+                // Left: preset list
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(UIString("Presets"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 6) {
+                            presetRow(id: customProfileTag, title: UIString("Custom (unsaved)"))
+                            ForEach(settings.modelProfiles) { profile in
+                                presetRow(id: profile.id, title: profile.name)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .frame(maxHeight: 220)
+                    .background {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.primary.opacity(0.04))
+                    }
+
+                    Button(UIString("New custom draft")) {
+                        settings.clearSelectedModelProfile()
+                        modelProfileNameDraft = UIString("My preset")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .frame(width: 180, alignment: .topLeading)
+
+                // Right: editor panel
+                VStack(alignment: .leading, spacing: 10) {
+                    TextField(UIString("Preset name"), text: $modelProfileNameDraft)
+                        .textFieldStyle(.roundedBorder)
+
+                    HStack {
+                        if showingKey {
+                            TextField(UIString("API Key"), text: $settings.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                        } else {
+                            SecureField(UIString("API Key"), text: $settings.apiKey)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        Button(action: { showingKey.toggle() }) {
+                            Image(systemName: showingKey ? "eye.slash" : "eye")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .onChange(of: settings.apiKey) { _, _ in
+                        PluginExecutor.shared.refreshService()
+                        testResult = nil
+                    }
+
+                    TextField(UIString("API Base URL"), text: $settings.apiBaseURL)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: settings.apiBaseURL) { _, _ in
+                            testResult = nil
+                        }
+
+                    TextField(UIString("Model"), text: $settings.apiModel)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: settings.apiModel) { _, _ in
+                            testResult = nil
+                        }
+
+                    HStack(spacing: 8) {
+                        Spacer()
+
+                        Button(UIString("Save")) {
+                            saveAsNewPreset()
+                        }
+                        .disabled(!canSaveAsNewPreset)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button(UIString("Update")) {
+                            updateSelectedPreset()
+                        }
+                        .disabled(!canUpdateSelectedPreset)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button(UIString("Delete"), role: .destructive) {
+                            settings.deleteSelectedModelProfile()
+                            syncPresetDraft()
+                        }
+                        .disabled(settings.selectedModelProfile == nil)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+
+                    HStack(spacing: 8) {
+                        Spacer()
+
+                        Button(action: testAPIConnection) {
+                            HStack(spacing: 4) {
+                                if isTesting {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Image(systemName: "bolt.fill")
+                                        .font(.system(size: 10))
+                                }
+                                Text(UIString("Test Connection"))
+                                    .font(.system(size: 12))
+                            }
+                        }
+                        .disabled(isTesting || settings.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        if let result = testResult {
+                            testResultLabel(result)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        }
     }
 
     private func presetRow(id: String, title: String) -> some View {

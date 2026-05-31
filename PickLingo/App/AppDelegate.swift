@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var themeCancellable: AnyCancellable?
     private var quickAskFlagsMonitor: Any?
     private var quickAskKeyDownMonitor: Any?
+    private var quickAskLocalFlagsMonitor: Any?
+    private var quickAskLocalKeyDownMonitor: Any?
     private var commandTapInProgress = false
     private var commandTapHadOtherModifiers = false
     private var commandTapHadNonModifierKey = false
@@ -120,6 +122,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSEvent.removeMonitor(monitor)
             quickAskKeyDownMonitor = nil
         }
+        if let monitor = quickAskLocalFlagsMonitor {
+            NSEvent.removeMonitor(monitor)
+            quickAskLocalFlagsMonitor = nil
+        }
+        if let monitor = quickAskLocalKeyDownMonitor {
+            NSEvent.removeMonitor(monitor)
+            quickAskLocalKeyDownMonitor = nil
+        }
 
         quickAskFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             Task { @MainActor [weak self] in
@@ -130,6 +140,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor [weak self] in
                 self?.handleQuickAskKeyDown(event)
             }
+        }
+
+        quickAskLocalFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.handleQuickAskFlagsChanged(event)
+            return event
+        }
+        quickAskLocalKeyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleQuickAskKeyDown(event)
+            return event
         }
     }
 
@@ -330,10 +349,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func resolvedAskPluginForQuickAsk() -> Plugin? {
-        if let ask = PluginManager.shared.plugins.first(where: { $0.builtInID == "ask" }) {
-            return ask
-        }
-        return Plugin.defaultBuiltIn(id: "ask")
+        let basePlugin = PluginManager.shared.plugins.first(where: { $0.builtInID == "ask" })
+            ?? Plugin.defaultBuiltIn(id: "ask")
+        guard var askPlugin = basePlugin else { return nil }
+
+        let customPrompt = AppSettings.shared.quickAskPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        askPlugin.prompt = customPrompt.isEmpty ? AppSettings.defaultQuickAskPrompt : customPrompt
+        return askPlugin
     }
 
     // MARK: - Plugin Execution
@@ -562,6 +584,14 @@ extension AppDelegate: NSWindowDelegate {
         if let monitor = quickAskKeyDownMonitor {
             NSEvent.removeMonitor(monitor)
             quickAskKeyDownMonitor = nil
+        }
+        if let monitor = quickAskLocalFlagsMonitor {
+            NSEvent.removeMonitor(monitor)
+            quickAskLocalFlagsMonitor = nil
+        }
+        if let monitor = quickAskLocalKeyDownMonitor {
+            NSEvent.removeMonitor(monitor)
+            quickAskLocalKeyDownMonitor = nil
         }
     }
 }
