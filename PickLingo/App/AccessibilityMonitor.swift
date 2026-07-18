@@ -396,9 +396,25 @@ final class AccessibilityMonitor: ObservableObject {
             let newText: String?
             if pasteboard.changeCount != previousChangeCount {
                 newText = pasteboard.string(forType: .string)
-                pasteboard.clearContents()
-                if let prev = previousContents {
-                    pasteboard.setString(prev, forType: .string)
+                // Record the change count produced by OUR synthetic Cmd+C so we
+                // can detect a *further* change before restoring.
+                let ourChangeCount = pasteboard.changeCount
+
+                // Restore the user's clipboard — but only if nothing has copied
+                // over our synthetic copy in the meantime. If the user (or the
+                // app) pressed Cmd+C themselves right after selecting, the
+                // pasteboard advances past `ourChangeCount`; restoring here would
+                // silently clobber their copy, forcing a second Cmd+C. Defer the
+                // restore slightly and skip it when a newer copy is detected.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    guard pasteboard.changeCount == ourChangeCount else {
+                        // A newer copy happened — leave it intact.
+                        return
+                    }
+                    pasteboard.clearContents()
+                    if let prev = previousContents {
+                        pasteboard.setString(prev, forType: .string)
+                    }
                 }
             } else {
                 newText = nil

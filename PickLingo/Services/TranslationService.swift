@@ -152,24 +152,25 @@ final class PluginExecutor {
         selectedText: String,
         userInput: String?
     ) -> String {
-        // If the prompt already contains {selected_text}, the text is embedded in the system prompt.
-        // In that case, send a minimal user message.
-        let promptContainsSelectedText = plugin.prompt.contains("{selected_text}")
+        // Always deliver the selected text in the user message, even when the
+        // plugin template also embeds {selected_text} in the system prompt.
+        // Burying the content only in the system role causes many
+        // OpenAI-compatible models (especially smaller/local ones) to
+        // under-weight or ignore it — the panel shows the word, but the model
+        // acts on the near-empty user turn. Putting the content in the user
+        // message is what these models reliably attend to.
+        let text = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let question = userInput?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if promptContainsSelectedText {
-            // The selected text is already in the system prompt.
-            // If there's user input not already embedded, add it.
-            if let input = userInput, !input.isEmpty, !plugin.prompt.contains("{user_input}") {
-                return input
-            }
-            return "Please proceed."
-        } else {
-            // Selected text goes as the user message
-            if let input = userInput, !input.isEmpty {
-                return "\(selectedText)\n\n\(input)"
-            }
-            return selectedText
+        if let question, !question.isEmpty {
+            if text.isEmpty { return question }
+            return "\(text)\n\n\(question)"
         }
+
+        // No user input (e.g. Translate/Explain/Polish/Summarize): send the
+        // selected text itself. Fall back to a nudge only when nothing is
+        // selected (e.g. Quick Ask with an empty selection).
+        return text.isEmpty ? "Please proceed." : text
     }
 
     // MARK: - Private
