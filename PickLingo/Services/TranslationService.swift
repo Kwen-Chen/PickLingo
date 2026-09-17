@@ -1,7 +1,14 @@
 import Foundation
 
+@MainActor
+protocol PluginExecuting {
+    func executeStream(text: String, plugin: Plugin, userInput: String?, source: Language?, target: Language?, thinkModeOverride: Bool?) -> AsyncThrowingStream<StreamChunk, Error>
+    func execute(text: String, plugin: Plugin, userInput: String?, source: Language?, target: Language?, thinkModeOverride: Bool?) async throws -> String
+}
+
 /// Executes plugins by building prompts from plugin templates and calling the OpenAI-compatible API.
-final class PluginExecutor {
+@MainActor
+final class PluginExecutor: PluginExecuting {
     static let shared = PluginExecutor()
 
     private var openAIService: OpenAIService?
@@ -20,9 +27,9 @@ final class PluginExecutor {
     ) -> AsyncThrowingStream<StreamChunk, Error> {
         if plugin.isLocalActionPlugin {
             return AsyncThrowingStream { continuation in
-                Task {
+                let task = Task {
                     do {
-                        let message = try LocalActionExecutor.shared.execute(
+                        let message = try await LocalActionExecutor.shared.execute(
                             plugin: plugin,
                             selectedText: text,
                             userInput: userInput,
@@ -36,6 +43,7 @@ final class PluginExecutor {
                         continuation.finish(throwing: error)
                     }
                 }
+                continuation.onTermination = { _ in task.cancel() }
             }
         }
 
@@ -83,7 +91,7 @@ final class PluginExecutor {
         thinkModeOverride: Bool? = nil
     ) async throws -> String {
         if plugin.isLocalActionPlugin {
-            return try LocalActionExecutor.shared.execute(
+            return try await LocalActionExecutor.shared.execute(
                 plugin: plugin,
                 selectedText: text,
                 userInput: userInput,

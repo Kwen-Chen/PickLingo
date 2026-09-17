@@ -1,6 +1,6 @@
 import Foundation
 
-enum StreamChunk {
+enum StreamChunk: Equatable {
     case text(String)
     case thinking(String)
     case done
@@ -29,6 +29,7 @@ enum LLMError: LocalizedError {
     }
 }
 
+@MainActor
 final class OpenAIService {
 
     // MARK: - Non-streaming
@@ -90,6 +91,7 @@ final class OpenAIService {
                         var errorData = Data()
                         for try await byte in bytes {
                             errorData.append(byte)
+                            if errorData.count >= 65_536 { break }
                         }
                         let errorBody = String(data: errorData, encoding: .utf8) ?? ""
                         if let json = try? JSONSerialization.jsonObject(with: errorData) as? [String: Any],
@@ -105,30 +107,12 @@ final class OpenAIService {
                     for try await line in bytes.lines {
                         if Task.isCancelled { break }
 
-                        guard line.hasPrefix("data: ") else { continue }
-                        let payload = String(line.dropFirst(6))
+                        guard line.hasPrefix("data:") else { continue }
+                        let payload = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
 
-                        if payload == "[DONE]" {
-                            continuation.yield(.done)
-                            break
-                        }
-
-                        guard let data = payload.data(using: .utf8),
-                              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                              let choices = json["choices"] as? [[String: Any]],
-                              let delta = choices.first?["delta"] as? [String: Any] else {
-                            continue
-                        }
-
-                        if let reasoning = delta["reasoning_content"] as? String, !reasoning.isEmpty {
-                            continuation.yield(.thinking(reasoning))
-                        } else if let reasoning = delta["reasoning"] as? String, !reasoning.isEmpty {
-                            continuation.yield(.thinking(reasoning))
-                        }
-
-                        if let content = delta["content"] as? String, !content.isEmpty {
-                            continuation.yield(.text(content))
-                        }
+                        let chunks = try ChatCompletionStreamParser.parse(payload)
+                        for chunk in chunks { continuation.yield(chunk) }
+                        if chunks.contains(.done) { break }
                     }
 
                     continuation.finish()
@@ -150,57 +134,88 @@ final class OpenAIService {
     // MARK: - Request Builder
 
     private func buildRequest(systemPrompt: String, userMessage: String, stream: Bool, thinkMode: Bool) throws -> URLRequest {
-        let apiKey = AppSettings.shared.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !apiKey.isEmpty else {
-            throw LLMError.apiKeyMissing
-        }
-
         let settings = AppSettings.shared
-        var baseURL = settings.apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        while baseURL.hasSuffix("/") {
-            baseURL.removeLast()
+        return try ChatCompletionRequest.make(
+            baseURL: settings.apiBaseURL, model: settings.apiModel, apiKey: settings.apiKey,
+            systemPrompt: systemPrompt, userMessage: userMessage,
+            stream: stream, thinkMode: thinkMode
+        )
+    }
+
+}
+
+/// Preserve provider-specific path prefixes and query parameters. HTTP is supported
+/// for explicitly configured local/internal endpoints; HTTPS keeps standard TLS validation.
+enum APIEndpoint {
+    static func resolve(_ input: String) throws -> URL {
+        guard var components = URLComponents(string: input.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = components.host, !host.isEmpty,
+              !host.contains(where: { $0.isWhitespace }),
+              components.user == nil, components.password == nil, components.fragment == nil else {
+            throw LLMError.serverError(UIString("Enter a valid HTTP or HTTPS API base URL."))
         }
-
-        let endpoint: String
-        if baseURL.hasSuffix("/v1") {
-            endpoint = "\(baseURL)/chat/completions"
-        } else if baseURL.contains("/v1/") {
-            endpoint = baseURL
-        } else {
-            endpoint = "\(baseURL)/v1/chat/completions"
+        var path = components.path
+        while path.hasSuffix("/") { path.removeLast() }
+        if !path.hasSuffix("/chat/completions") {
+            path += path.hasSuffix("/v1") ? "/chat/completions" : "/v1/chat/completions"
         }
+        components.path = path
+        guard let url = components.url else { throw LLMError.invalidResponse }
+        return url
+    }
+}
 
-        guard let url = URL(string: endpoint) else {
-            throw LLMError.serverError("Invalid API URL: \(endpoint)")
-        }
-
-        print("[PickLingo] Request to: \(endpoint), model: \(settings.apiModel), stream: \(stream), thinkMode: \(thinkMode)")
-
-        var requestBody: [String: Any] = [
-            "model": settings.apiModel,
+/// Standard OpenAI Chat Completions fields only. Do not force sampling controls
+/// or vendor-specific reasoning objects on models that do not support them.
+enum ChatCompletionRequest {
+    static func make(
+        baseURL: String, model: String, apiKey: String,
+        systemPrompt: String, userMessage: String, stream: Bool, thinkMode: Bool
+    ) throws -> URLRequest {
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { throw LLMError.apiKeyMissing }
+        let model = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else { throw LLMError.serverError(UIString("Enter an API model name.")) }
+        var body: [String: Any] = [
+            "model": model,
             "messages": [
                 ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": userMessage],
+                ["role": "user", "content": userMessage]
             ],
-            "temperature": 0.3,
-            "max_tokens": 4096,
+            "max_completion_tokens": 4096,
+            "stream": stream
         ]
-
-        if stream {
-            requestBody["stream"] = true
-        }
-
-        // Use the provider's generic reasoning switch instead of model-specific
-        // effort levels so Think Mode works consistently across OpenAI-compatible APIs.
-        requestBody["reasoning"] = ["enabled": thinkMode]
-
-        var request = URLRequest(url: url)
+        if thinkMode { body["reasoning_effort"] = "medium" }
+        var request = URLRequest(url: try APIEndpoint.resolve(baseURL))
         request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(stream ? "text/event-stream" : "application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = stream ? 120 : 30
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
+    }
+}
+
+enum ChatCompletionStreamParser {
+    static func parse(_ payload: String) throws -> [StreamChunk] {
+        if payload == "[DONE]" { return [.done] }
+        guard let data = payload.data(using: .utf8),
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw LLMError.invalidResponse
+        }
+        if let error = json["error"] as? [String: Any], let message = error["message"] as? String {
+            throw LLMError.serverError(message)
+        }
+        guard let choices = json["choices"] as? [[String: Any]],
+              let delta = choices.first?["delta"] as? [String: Any] else { return [] }
+        var chunks: [StreamChunk] = []
+        // Accept optional gateway response extensions without sending nonstandard fields.
+        if let reasoning = (delta["reasoning_content"] ?? delta["reasoning"]) as? String, !reasoning.isEmpty {
+            chunks.append(.thinking(reasoning))
+        }
+        if let content = delta["content"] as? String, !content.isEmpty { chunks.append(.text(content)) }
+        return chunks
     }
 }

@@ -1,6 +1,16 @@
 import Cocoa
 
 enum ScreenLocator {
+    /// AppKit uses a bottom-left origin; AX uses the primary display's top-left.
+    /// NSScreen.main is the active window's screen, which may be a secondary display.
+    static func accessibilityPoint(for point: NSPoint) -> CGPoint {
+        accessibilityPoint(for: point, primaryScreenHeight: NSScreen.screens.first?.frame.height ?? 0)
+    }
+
+    static func accessibilityPoint(for point: NSPoint, primaryScreenHeight: CGFloat) -> CGPoint {
+        CGPoint(x: point.x, y: primaryScreenHeight - point.y)
+    }
+
     static func screen(for point: NSPoint) -> NSScreen? {
         if let containingScreen = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
             return containingScreen

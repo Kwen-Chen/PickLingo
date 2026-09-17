@@ -44,51 +44,19 @@ struct QuickAskShortcutParser {
     static let defaultShortcut = "cmd+cmd"
 
     static func parse(_ rawValue: String) -> QuickAskShortcutTrigger? {
-        let normalized = normalize(rawValue)
-        if normalized == defaultShortcut {
-            return .doubleCommandTap
-        }
-
-        let tokens = normalized
-            .split(separator: "+")
-            .map { String($0) }
-            .filter { !$0.isEmpty }
-        guard !tokens.isEmpty else { return nil }
-
-        var modifiers: NSEvent.ModifierFlags = []
-        var keyToken: String?
-
-        for token in tokens {
-            switch token {
-            case "cmd", "command", "⌘":
-                modifiers.insert(.command)
-            case "shift", "⇧":
-                modifiers.insert(.shift)
-            case "opt", "option", "alt", "⌥":
-                modifiers.insert(.option)
-            case "ctrl", "control", "⌃":
-                modifiers.insert(.control)
-            default:
-                guard keyToken == nil else { return nil }
-                keyToken = token
-            }
-        }
-
-        guard let keyToken, let key = canonicalKeyToken(keyToken), !modifiers.isEmpty else {
-            return nil
-        }
-        return .keyCombo(key: key, modifiers: modifiers)
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased().replacingOccurrences(of: " ", with: "")
+        guard let trigger = parseWithoutNormalization(value) else { return nil }
+        // These native editing shortcuts must never open a window over the source app.
+        if case .keyCombo(let key, let modifiers) = trigger,
+           modifiers == .command, ["c", "v", "x", "a", "z"].contains(key) { return nil }
+        return trigger
     }
 
     static func normalize(_ rawValue: String) -> String {
-        let trimmed = rawValue
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: " ", with: "")
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !trimmed.isEmpty else { return defaultShortcut }
-        guard let parsed = parseWithoutNormalization(trimmed) else {
-            return defaultShortcut
-        }
+        guard let parsed = parse(trimmed) else { return trimmed }
         return serialize(parsed)
     }
 
@@ -101,7 +69,8 @@ struct QuickAskShortcutParser {
             .split(separator: "+")
             .map { String($0) }
             .filter { !$0.isEmpty }
-        guard !tokens.isEmpty else { return nil }
+        guard tokens.count >= 2, !normalized.contains("++"),
+              !normalized.hasPrefix("+"), !normalized.hasSuffix("+") else { return nil }
 
         var modifiers: NSEvent.ModifierFlags = []
         var keyToken: String?
@@ -164,6 +133,24 @@ struct UILocalizer {
     private typealias Pair = (en: String, zhHans: String)
 
     private static let manualTranslations: [String: Pair] = [
+        "Enter an API model name.": ("Enter an API model name.", "请输入 API 模型名称。"),
+        "Think Mode uses standard reasoning_effort on supported reasoning models. The service may return only the final answer.": ("Think Mode uses standard reasoning_effort on supported reasoning models. The service may return only the final answer.", "Think Mode 使用标准 reasoning_effort 参数，需要支持推理的模型。服务可能仅返回最终回答。"),
+        "Enter a valid HTTP or HTTPS API base URL.": ("Enter a valid HTTP or HTTPS API base URL.", "请输入有效的 HTTP 或 HTTPS API 基础 URL。"),
+        "Menu Bar": ("Menu Bar", "菜单栏"),
+        "Open macOS Menu Bar Settings": ("Open macOS Menu Bar Settings", "打开 macOS 菜单栏设置"),
+        "If the icon is missing, allow PickLingo in macOS Menu Bar settings. Reopen the app from Finder or Spotlight to access this window.": ("If the icon is missing, allow PickLingo in macOS Menu Bar settings. Reopen the app from Finder or Spotlight to access this window.", "若图标未显示，请在 macOS 菜单栏设置中允许 PickLingo 显示。也可从 Finder 或 Spotlight 再次打开应用，进入此设置窗口。"),
+        "Process Copied Text": ("Process Copied Text", "处理已复制文本"),
+        "Disable in Current App": ("Disable in Current App", "在当前应用中禁用"),
+        "Selection & Clipboard": ("Selection & Clipboard", "选中与剪贴板"),
+        "Automatic selection detection never copies or restores your clipboard.": ("Automatic selection detection never copies or restores your clipboard.", "自动取词不会执行复制，也不会恢复或覆盖你的剪贴板。"),
+        "If an app does not expose selected text, copy normally, then choose Process Copied Text from the menu bar.": ("If an app does not expose selected text, copy normally, then choose Process Copied Text from the menu bar.", "若某个应用无法自动取词，请正常复制，再从菜单栏选择“处理已复制文本”。"),
+        "Insert and Replace leave the result on the clipboard.": ("Insert and Replace leave the result on the clipboard.", "插入和替换会将结果保留在剪贴板中。"),
+        "This shortcut is invalid or reserved for editing. Try cmd+shift+k.": ("This shortcut is invalid or reserved for editing. Try cmd+shift+k.", "快捷键无效或与系统编辑操作冲突，请尝试 cmd+shift+k。"),
+        "Source app unavailable. Copy the result and paste it manually.": ("Source app unavailable. Copy the result and paste it manually.", "源应用无法激活，请复制结果后手动粘贴。"),
+        "Paste canceled because the app or clipboard changed. Copy the result and paste it manually.": ("Paste canceled because the app or clipboard changed. Copy the result and paste it manually.", "应用或剪贴板已变化，已取消粘贴。请复制结果后手动粘贴。"),
+        "Copy All (⇧⌘C)": ("Copy All (⇧⌘C)", "复制全部（⇧⌘C）"),
+        "Stop": ("Stop", "停止"),
+
         "General": ("General", "通用"),
         "Plugins": ("Plugins", "插件"),
         "General Behavior": ("General Behavior", "基本行为"),
@@ -491,18 +478,16 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    private static var configDirectoryURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".picklingo", isDirectory: true)
-    }
-
-    private static var configFileURL: URL {
-        configDirectoryURL.appendingPathComponent("config.json")
-    }
-
+    private let configDirectoryURL: URL
+    private var configFileURL: URL { configDirectoryURL.appendingPathComponent("config.json") }
     private var suppressPersistence = false
+    private var saveWorkItem: DispatchWorkItem?
+    private var hasPendingChanges = false
 
-    private init() {
-        load()
+    init(configDirectory: URL? = nil) {
+        configDirectoryURL = configDirectory ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".picklingo", isDirectory: true)
+        load(allowLegacyMigration: configDirectory == nil)
     }
 
     // MARK: - Model Profiles
@@ -591,6 +576,17 @@ final class AppSettings: ObservableObject {
 
     private func persistIfNeeded() {
         guard !suppressPersistence else { return }
+        hasPendingChanges = true
+        saveWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.save() }
+        saveWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
+    }
+
+    func saveImmediately() {
+        guard hasPendingChanges else { return }
+        saveWorkItem?.cancel()
+        saveWorkItem = nil
         save()
     }
 
@@ -620,21 +616,23 @@ final class AppSettings: ObservableObject {
         )
 
         do {
-            try FileManager.default.createDirectory(at: Self.configDirectoryURL, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: configDirectoryURL, withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(persisted)
-            try data.write(to: Self.configFileURL, options: .atomic)
+            try data.write(to: configFileURL, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: configFileURL.path)
+            hasPendingChanges = false
         } catch {
             print("[PickLingo] Failed to save settings: \(error)")
         }
     }
 
-    private func load() {
+    private func load(allowLegacyMigration: Bool) {
         suppressPersistence = true
         defer { suppressPersistence = false }
 
-        if let data = try? Data(contentsOf: Self.configFileURL),
+        if let data = try? Data(contentsOf: configFileURL),
            let persisted = try? JSONDecoder().decode(PersistedSettings.self, from: data) {
             isEnabled = persisted.isEnabled
             autoDetectLanguage = persisted.autoDetectLanguage
@@ -656,13 +654,14 @@ final class AppSettings: ObservableObject {
             appTheme = persisted.appTheme
             resultPanelFontSize = persisted.resultPanelFontSize
             modelProfiles = persisted.modelProfiles
-            appEnabledOverrides = persisted.appEnabledOverrides.reduce(into: [:]) { result, entry in
-                if entry.value == false {
-                    result[entry.key] = true
-                }
-            }
+            // JSON stores blacklist flags (true = disabled). Only the legacy
+            // UserDefaults migration below uses false = disabled.
+            appEnabledOverrides = persisted.appEnabledOverrides.filter { $0.value }
             return
         }
+
+        // Do not replace an unreadable existing file with legacy/default settings.
+        guard allowLegacyMigration, !FileManager.default.fileExists(atPath: configFileURL.path) else { return }
 
         // One-time migration from previous UserDefaults-based storage.
         let defaults = UserDefaults.standard

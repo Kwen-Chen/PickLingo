@@ -45,6 +45,27 @@ struct GeneralSettingsTab: View {
                     }
             }
 
+            Section(header: Text(UIString("Menu Bar"))) {
+                Text(UIString("If the icon is missing, allow PickLingo in macOS Menu Bar settings. Reopen the app from Finder or Spotlight to access this window."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button(UIString("Open macOS Menu Bar Settings")) {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
+
+            Section(header: Text(UIString("Selection & Clipboard"))) {
+                Label(UIString("Automatic selection detection never copies or restores your clipboard."), systemImage: "checkmark.shield")
+                Text(UIString("If an app does not expose selected text, copy normally, then choose Process Copied Text from the menu bar."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(UIString("Insert and Replace leave the result on the clipboard."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             apiConfigurationSection
 
             Section(header: Text(UIString("Interface"))) {
@@ -123,6 +144,12 @@ struct GeneralSettingsTab: View {
                         }
                 }
 
+                if QuickAskShortcutParser.parse(settings.quickAskShortcut) == nil {
+                    Text(UIString("This shortcut is invalid or reserved for editing. Try cmd+shift+k."))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
                 Text(UIString("Use cmd+cmd for double-Command tap, or shortcuts like cmd+shift+k."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -159,13 +186,10 @@ struct GeneralSettingsTab: View {
                 Toggle(UIString("Enable streaming output"), isOn: $settings.streamingEnabled)
 
                 Toggle(UIString("Enable Think Mode"), isOn: $settings.thinkModeEnabled)
-                    .disabled(!settings.streamingEnabled)
 
-                if !settings.streamingEnabled {
-                    Text(UIString("Think Mode requires streaming to be enabled."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text(UIString("Think Mode uses standard reasoning_effort on supported reasoning models. The service may return only the final answer."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section(header: Text(UIString("App Scope"))) {
@@ -525,24 +549,26 @@ struct GeneralSettingsTab: View {
     private func testResultLabel(_ result: APITestResult) -> some View {
         switch result {
         case .success(let message, let latency):
-            HStack(spacing: 4) {
+            HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(.green)
                 Text("\(message) (\(String(format: "%.1fs", latency)))")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
         case .failure(let message, let latency):
-            HStack(spacing: 4) {
+            HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(.red)
                 Text("\(message) (\(String(format: "%.1fs", latency)))")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
             }
         }
     }

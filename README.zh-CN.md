@@ -2,7 +2,7 @@
 English documentation see [README.md](./README.md).
 
 PickLingo 是一个插件优先的 macOS 高度自定义桌面助手。
-你在任意应用里选中文本后，它会在光标附近弹出轻量提示面板，让你立即调用 AI 或本地动作插件完成处理。
+你在支持辅助功能取词的应用里选中文本后，它会在光标附近弹出轻量提示面板，让你立即调用 AI 或本地动作插件完成处理。
 
 
 ## 为什么用 PickLingo
@@ -19,6 +19,20 @@ PickLingo 是一个插件优先的 macOS 高度自定义桌面助手。
 2. PickLingo 检测到选区后弹出 Tooltip 插件条。
 3. 点击插件立即执行；如插件需要额外输入，会先弹输入面板。
 4. 在结果面板中查看内容，并可复制、插入、替换、重新生成、追问。
+
+## API 协议
+
+使用 OpenAI 标准 Chat Completions（`/v1/chat/completions`），支持普通 JSON 响应和 SSE 流式输出，以及自行配置的 HTTP/HTTPS 网关。普通请求不发送厂商私有 `reasoning` 字段，也不强制设置采样温度；Think Mode 使用标准 `reasoning_effort: medium`，需要模型支持。输出上限使用 `max_completion_tokens`。
+
+API 基础地址可以带网关路径前缀，也可以直接填写完整的 `/chat/completions` 地址。连接测试会完整显示错误，支持选择复制。HTTP 不加密，请仅用于可信的本地或内网服务。
+
+## 选中与复制兼容性
+
+自动取词通过辅助功能接口读取文本。启动和切换应用时会按能力自动启用接口，兼容 Chromium/Electron；接口尚未就绪时有限重试一次，无需逐个配置应用。取词不模拟 ⌘C、不修改剪贴板，也不会在选中后恢复旧剪贴板，因此 Ghostty 的选中自动复制、VS Code 的复制粘贴可由原应用正常处理。
+
+若某个应用无法自动取词，请正常复制，再选择菜单栏的 **处理已复制文本**。菜单栏也支持一键在当前应用中禁用自动取词；黑名单会在重启后保留。
+
+结果面板中，⌘C 用于原生选区复制；**复制**按钮或 ⇧⌘C 复制完整结果。输出中可点击**停止**，阅读和选择结果时不会自动聚焦追问输入框。**插入／替换会将结果保留在剪贴板**，不再延迟恢复旧内容。
 
 ## 默认插件配置
 
@@ -128,7 +142,7 @@ hdiutil create -volname "PickLingo" \
 ### Streaming & Think Mode
 
 - `Enable streaming output`
-- `Enable Think Mode`（依赖 Streaming 开启）
+- `Enable Think Mode`（需要支持标准推理参数的模型，不依赖流式输出）
 
 ### App Scope（应用范围 / 黑名单）
 
@@ -165,7 +179,7 @@ hdiutil create -volname "PickLingo" \
 
 - 配置保存在本机 `~/.picklingo/` 目录
 - 主要文件：
-- `~/.picklingo/settings.json`
+- `~/.picklingo/config.json`
 - `~/.picklingo/plugins.json`
 - API Key 会随模型预设一起保存在本机配置中
 
@@ -190,6 +204,14 @@ hdiutil create -volname "PickLingo" \
 ├── README.md
 └── README.zh-CN.md
 ```
+
+## 回归测试
+
+```sh
+./scripts/test.sh
+```
+
+测试范围及 Ghostty、VS Code 的人工验收步骤见 [回归验证](docs/verification.md)。
 
 ## 贡献方式
 

@@ -2,6 +2,9 @@ import Cocoa
 import SwiftUI
 
 final class TooltipPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+
     var onPluginSelected: ((Plugin) -> Void)?
 
     private var autoHideWorkItem: DispatchWorkItem?
@@ -74,6 +77,8 @@ final class TooltipPanel: NSPanel {
     }
 
     func show(at point: NSPoint) {
+        dismiss()
+        guard !PluginManager.shared.enabledPlugins().isEmpty else { return }
         applyCurrentTheme()
         setupContent()
 
@@ -177,18 +182,17 @@ final class TooltipPanel: NSPanel {
 
     // MARK: - Dismiss
 
-    func fadeOut() {
+    func fadeOut() { dismiss() }
+
+    func dismiss() {
         autoHideWorkItem?.cancel()
         mouseExitDismissWorkItem?.cancel()
+        autoHideWorkItem = nil
+        mouseExitDismissWorkItem = nil
         removeAllMonitors()
-
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.15
-            self.animator().alphaValue = 0
-        }, completionHandler: {
-            self.orderOut(nil)
-            self.alphaValue = 1.0
-        })
+        // Synchronous dismissal cannot hide a newly shown tooltip via an old animation.
+        orderOut(nil)
+        alphaValue = 1
     }
 
     func cancelAutoHide() {

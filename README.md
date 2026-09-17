@@ -6,6 +6,22 @@ PickLingo is a plugin-first highly customizable macOS assistant that appears rig
 Select text in almost any app, trigger the floating tip panel, and run AI or local action plugins in seconds.
 
 
+## API protocol
+
+PickLingo uses standard OpenAI Chat Completions (`/v1/chat/completions`), including JSON responses and SSE streaming. It supports user-configured HTTP/HTTPS gateways and preserves URL path prefixes. Normal requests omit vendor-specific `reasoning` objects and forced sampling temperatures. Think Mode sends standard `reasoning_effort: medium` to supported reasoning models, and output limits use `max_completion_tokens`.
+
+Connection errors are displayed in full and can be selected and copied. HTTP is unencrypted and is intended for trusted local/internal services.
+
+## Selection and clipboard compatibility
+
+Automatic selection detection reads text through Accessibility APIs. It enables supported accessibility interfaces when you switch apps, including Chromium/Electron, and retries once if the text interface is still initializing. It never sends Cmd+C or writes/restores the clipboard, allowing terminal copy-on-select and editor copy/paste to remain under the source app's control.
+
+If an app does not expose selected text, copy normally and choose **Process Copied Text** from the menu bar. You can also disable automatic detection in the current app; exclusions survive restarts.
+
+In the result panel, Cmd+C uses native text selection. Use **Copy** or Shift+Cmd+C for the full result. **Stop** cancels generation without moving focus to follow-up input. **Insert/Replace leave the result on the clipboard** instead of restoring older contents later.
+
+Run regression tests with `./scripts/test.sh`. See [verification notes](docs/verification.md) for coverage and the Ghostty/VS Code manual checks.
+
 ## Why PickLingo
 
 - Selection-first workflow: no app switching, no copy-paste loops
@@ -166,7 +182,7 @@ hdiutil create -volname "PickLingo" \
 
 - Configuration is stored locally under `~/.picklingo/`
 - Main files:
-- `~/.picklingo/settings.json`
+- `~/.picklingo/config.json`
 - `~/.picklingo/plugins.json`
 - API keys are stored as part of local settings/presets on your machine
 

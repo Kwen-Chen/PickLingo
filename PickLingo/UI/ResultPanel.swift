@@ -6,10 +6,7 @@ import SwiftUI
 private final class KeyableResultPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 
-    /// Invoked when Cmd+C is pressed while there is no active text selection
-    /// in the first responder. The default Cmd+C in macOS is reserved here for
-    /// native text-selection copy so that selecting part of the result and
-    /// pressing Cmd+C copies just the selection rather than the entire result.
+    /// Copy the whole result explicitly with Shift+Cmd+C.
     var onCopyAllRequested: (() -> Void)?
     var onFocusFollowUpRequested: (() -> Void)?
 
@@ -33,19 +30,15 @@ private final class KeyableResultPanel: NSPanel {
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if modifiers == .command, event.charactersIgnoringModifiers == "c" {
-            if let textView = firstResponder as? NSTextView, textView.selectedRange.length > 0 {
-                // Defer to normal handling so the text view copies just the selection.
-                return super.performKeyEquivalent(with: event)
-            }
-            // No active selection — treat Cmd+C as "copy the entire result".
-            if let onCopyAllRequested {
-                onCopyAllRequested()
-                return true
-            }
+        // Cmd+C belongs to the native responder chain, including SwiftUI text selections.
+        if modifiers == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "c",
+           let onCopyAllRequested {
+            onCopyAllRequested()
+            return true
         }
         return super.performKeyEquivalent(with: event)
     }
+
 }
 
 @MainActor
@@ -80,7 +73,7 @@ final class ResultPanelController: NSObject, NSWindowDelegate {
         at origin: NSPoint
     ) {
         // Cancel any existing stream but don't animate out
-        viewModel.cancelStream()
+        viewModel.cancelPendingWork()
 
         panelOrigin = origin
 
@@ -178,14 +171,10 @@ final class ResultPanelController: NSObject, NSWindowDelegate {
     }
 
     func dismiss() {
-        viewModel.cancelStream()
+        viewModel.cancelPendingWork()
         guard let panel else { return }
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.1
-            panel.animator().alphaValue = 0
-        }, completionHandler: {
-            panel.orderOut(nil)
-        })
+        panel.orderOut(nil)
+        panel.alphaValue = 1
     }
 
     func dismissIfNotPinned() {
@@ -226,22 +215,11 @@ final class ResultPanelController: NSObject, NSWindowDelegate {
     }
 
     private func scheduleFollowUpFocus() {
-        DispatchQueue.main.async { [weak self] in
-            self?.focusFollowUpInput()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.focusFollowUpInput()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.focusFollowUpInput()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.focusFollowUpInput()
-        }
+        DispatchQueue.main.async { [weak self] in self?.focusFollowUpInput() }
     }
 
     private func focusFollowUpInput() {
-        guard let panel,
+        guard let panel, panel.isVisible, panel.isKeyWindow,
               let textField = panel.contentView?.firstTextField(
                 withPlaceholder: UIString("Type your follow-up...")
               ) else {
@@ -282,15 +260,23 @@ struct BodyContentHeightPreferenceKey: PreferenceKey {
 @MainActor
 final class ResultViewModel: ObservableObject {
     let minPanelWidth: CGFloat = 340
+    private let executor: any PluginExecuting
+    private let settings: AppSettings
+
+    init(executor: (any PluginExecuting)? = nil, settings: AppSettings? = nil) {
+        self.executor = executor ?? PluginExecutor.shared
+        self.settings = settings ?? AppSettings.shared
+    }
 
     @Published var sourceText: String = ""
     @Published var resultText: String = ""
     @Published var thinkingText: String = ""
+    @Published private(set) var isGenerating = false
+    @Published private(set) var isPasting = false
     @Published var isLoading: Bool = false
     @Published var isThinking: Bool = false
     @Published var errorMessage: String?
     @Published var isPinned: Bool = false
-    @Published private(set) var followUpFocusRequestID: Int = 0
 
     // Plugin info
     @Published var currentPlugin: Plugin?
@@ -306,6 +292,9 @@ final class ResultViewModel: ObservableObject {
     var onDismiss: (() -> Void)?
     var onPinChanged: ((Bool) -> Void)?
     private var currentStreamTask: Task<Void, Never>?
+    private var pasteTask: Task<Void, Never>?
+    private var executionID = UUID()
+    private var originalSelectedText = ""
     private var latestAnswerText: String = ""
     private var pendingFollowUpDisplayPrefix: String?
     private var sourceAppPID: pid_t = 0
@@ -317,7 +306,10 @@ final class ResultViewModel: ObservableObject {
         thinkModeOverride: Bool? = nil,
         sourceAppPID: pid_t = 0
     ) {
+        pasteTask?.cancel()
+        isPasting = false
         sourceText = text
+        originalSelectedText = text
         currentPlugin = plugin
         userInputText = userInput ?? ""
         self.thinkModeOverride = thinkModeOverride
@@ -326,7 +318,7 @@ final class ResultViewModel: ObservableObject {
         pendingFollowUpDisplayPrefix = nil
 
         if plugin.showLanguageControls {
-            let settings = AppSettings.shared
+            let settings = self.settings
             let detected: Language
             if settings.autoDetectLanguage {
                 detected = LanguageDetector.detect(text) ?? .english
@@ -355,105 +347,84 @@ final class ResultViewModel: ObservableObject {
     }
 
     private func performExecution() {
-        currentStreamTask?.cancel()
-        currentStreamTask = nil
-
+        cancelStream()
+        guard let plugin = currentPlugin else { return }
+        let requestID = executionID
+        isGenerating = true
         isLoading = true
         errorMessage = nil
-        let displayPrefix = pendingFollowUpDisplayPrefix
+        let displayPrefix = pendingFollowUpDisplayPrefix ?? ""
         pendingFollowUpDisplayPrefix = nil
-        resultText = displayPrefix ?? ""
+        resultText = displayPrefix
         thinkingText = ""
         isThinking = false
 
-        guard let plugin = currentPlugin else { return }
-
-        let settings = AppSettings.shared
         let text = sourceText
         let userInput = userInputText.isEmpty ? nil : userInputText
+        let source: Language? = plugin.showLanguageControls ? detectedSourceLanguage : nil
+        let target: Language? = plugin.showLanguageControls ? currentTargetLanguage : nil
+        let thinkMode = thinkModeOverride
+        let streaming = settings.streamingEnabled
 
-        if settings.streamingEnabled {
-            let source: Language? = plugin.showLanguageControls ? detectedSourceLanguage : nil
-            let target: Language? = plugin.showLanguageControls ? currentTargetLanguage : nil
-
-            currentStreamTask = Task {
-                do {
-                    var latestChunkedAnswer = ""
-                    let stream = PluginExecutor.shared.executeStream(
-                        text: text,
-                        plugin: plugin,
-                        userInput: userInput,
-                        source: source,
-                        target: target,
-                        thinkModeOverride: thinkModeOverride
+        currentStreamTask = Task {
+            do {
+                var answer = ""
+                if streaming {
+                    var reasoning = ""
+                    var lastPublish: TimeInterval = 0
+                    let stream = executor.executeStream(
+                        text: text, plugin: plugin, userInput: userInput,
+                        source: source, target: target, thinkModeOverride: thinkMode
                     )
                     for try await chunk in stream {
-                        if Task.isCancelled { break }
+                        try Task.checkCancellation()
+                        guard executionID == requestID else { return }
                         switch chunk {
-                        case .thinking(let delta):
-                            if !isThinking { isThinking = true }
-                            thinkingText += delta
-                        case .text(let delta):
-                            if isThinking { isThinking = false }
-                            if isLoading { isLoading = false }
-                            latestChunkedAnswer += delta
-                            resultText += delta
-                        case .done:
-                            break
+                        case .thinking(let delta): reasoning += delta
+                        case .text(let delta): answer += delta
+                        case .done: break
+                        }
+                        // Markdown layout is expensive. Publish at most 30 times/second.
+                        let now = ProcessInfo.processInfo.systemUptime
+                        if now - lastPublish >= 1.0 / 30 {
+                            resultText = displayPrefix + answer
+                            thinkingText = reasoning
+                            isThinking = answer.isEmpty && !reasoning.isEmpty
+                            isLoading = answer.isEmpty
+                            lastPublish = now
                         }
                     }
-                    latestAnswerText = latestChunkedAnswer.trimmingCharacters(in: .whitespacesAndNewlines)
-                    isLoading = false
-                    requestFollowUpFocusIfAvailable()
-                } catch {
-                    if !Task.isCancelled {
-                        errorMessage = error.localizedDescription
-                        isLoading = false
-                    }
-                }
-            }
-        } else {
-            currentStreamTask = Task {
-                do {
-                    let source: Language? = plugin.showLanguageControls ? detectedSourceLanguage : nil
-                    let target: Language? = plugin.showLanguageControls ? currentTargetLanguage : nil
-                    let result = try await PluginExecutor.shared.execute(
-                        text: text,
-                        plugin: plugin,
-                        userInput: userInput,
-                        source: source,
-                        target: target,
-                        thinkModeOverride: thinkModeOverride
+                    try Task.checkCancellation()
+                    guard executionID == requestID else { return }
+                    thinkingText = reasoning
+                } else {
+                    answer = try await executor.execute(
+                        text: text, plugin: plugin, userInput: userInput,
+                        source: source, target: target, thinkModeOverride: thinkMode
                     )
-                    if !Task.isCancelled {
-                        latestAnswerText = result.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if let prefix = displayPrefix {
-                            resultText = prefix + result
-                        } else {
-                            resultText = result
-                        }
-                    }
-                } catch {
-                    if !Task.isCancelled {
-                        errorMessage = error.localizedDescription
-                    }
                 }
+                try Task.checkCancellation()
+                guard executionID == requestID else { return }
+                resultText = displayPrefix + answer
+                latestAnswerText = answer.trimmingCharacters(in: .whitespacesAndNewlines)
                 isLoading = false
-                requestFollowUpFocusIfAvailable()
+                isThinking = false
+                isGenerating = false
+                currentStreamTask = nil
+                // Keep the user's current selection/focus while they read or copy.
+            } catch {
+                guard !Task.isCancelled, executionID == requestID else { return }
+                errorMessage = error.localizedDescription
+                isLoading = false
+                isThinking = false
+                isGenerating = false
+                currentStreamTask = nil
             }
         }
-    }
-
-    private func requestFollowUpFocusIfAvailable() {
-        guard errorMessage == nil,
-              currentPlugin?.enabledActions.contains(.followUp) == true,
-              !resultText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
-        }
-        followUpFocusRequestID += 1
     }
 
     func copyResult() {
+        guard !resultText.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(resultText, forType: .string)
         if !isPinned {
@@ -462,37 +433,55 @@ final class ResultViewModel: ObservableObject {
     }
 
     func insertResult() {
-        pasteTextToSourceApp(sourceText + "\n" + resultText)
-        dismiss()
+        pasteTextToSourceApp(originalSelectedText + "\n" + resultText)
     }
 
     func replaceResult() {
         pasteTextToSourceApp(resultText)
-        dismiss()
     }
 
     private func pasteTextToSourceApp(_ text: String) {
-        let prev = NSPasteboard.general.string(forType: .string)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-
-        activateSourceAppIfNeeded()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
-            self?.simulatePaste()
+        guard !isGenerating, !isPasting, !text.isEmpty else { return }
+        guard sourceAppPID != 0, sourceAppPID != ProcessInfo.processInfo.processIdentifier,
+              let app = NSRunningApplication(processIdentifier: sourceAppPID), !app.isTerminated else {
+            errorMessage = UIString("Source app unavailable. Copy the result and paste it manually.")
+            return
         }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            NSPasteboard.general.clearContents()
-            if let prev {
-                NSPasteboard.general.setString(prev, forType: .string)
+        let initialChangeCount = NSPasteboard.general.changeCount
+        let pid = sourceAppPID
+        isPasting = true
+        pasteTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.isPasting = false }
+            guard app.activate(options: []) else {
+                self.errorMessage = UIString("Source app unavailable. Copy the result and paste it manually.")
+                return
             }
+            do {
+                for _ in 0..<20 {
+                    try await Task.sleep(for: .milliseconds(25))
+                    if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { break }
+                }
+                try Task.checkCancellation()
+                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                      NSPasteboard.general.changeCount == initialChangeCount else {
+                    self.errorMessage = UIString("Paste canceled because the app or clipboard changed. Copy the result and paste it manually.")
+                    return
+                }
+                let source = CGEventSource(stateID: .privateState)
+                guard let down = CGEvent(keyboardEventSource: source, virtualKey: UInt16(kVK_ANSI_V), keyDown: true),
+                      let up = CGEvent(keyboardEventSource: source, virtualKey: UInt16(kVK_ANSI_V), keyDown: false) else { return }
+                // Explicit insertion leaves this text on the clipboard. Delayed restoration
+                // cannot reliably know when an external editor has finished reading it.
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                down.flags = .maskCommand
+                up.flags = .maskCommand
+                down.postToPid(pid)
+                up.postToPid(pid)
+                self.dismiss()
+            } catch { /* Canceled by closing the panel or starting another action. */ }
         }
-    }
-
-    private func activateSourceAppIfNeeded() {
-        guard sourceAppPID != 0,
-              let app = NSRunningApplication(processIdentifier: sourceAppPID) else { return }
-        app.activate(options: [])
     }
 
     func regenerateResult() {
@@ -515,7 +504,7 @@ final class ResultViewModel: ObservableObject {
         self.thinkModeOverride = thinkModeOverride
 
         if plugin.showLanguageControls {
-            let settings = AppSettings.shared
+            let settings = self.settings
             let detected: Language
             if settings.autoDetectLanguage {
                 detected = LanguageDetector.detect(context) ?? .english
@@ -531,23 +520,24 @@ final class ResultViewModel: ObservableObject {
         performExecution()
     }
 
-    private func simulatePaste() {
-        let source = CGEventSource(stateID: .combinedSessionState)
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
-        keyDown?.flags = .maskCommand
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
-        keyUp?.flags = .maskCommand
-        keyDown?.post(tap: .cghidEventTap)
-        keyUp?.post(tap: .cghidEventTap)
-    }
-
     func cancelStream() {
+        executionID = UUID()
         currentStreamTask?.cancel()
         currentStreamTask = nil
+        isLoading = false
+        isThinking = false
+        isGenerating = false
+    }
+
+    func cancelPendingWork() {
+        pasteTask?.cancel()
+        pasteTask = nil
+        isPasting = false
+        cancelStream()
     }
 
     func dismiss() {
-        cancelStream()
+        cancelPendingWork()
         onDismiss?()
     }
 }
@@ -589,22 +579,6 @@ struct ResultContentView: View {
         .frame(minWidth: viewModel.minPanelWidth, maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(BodyContentHeightPreferenceKey.self) { height in
             bodyContentHeight = height
-        }
-        .onChange(of: shouldShowFollowUpInput) { _, shouldFocus in
-            guard shouldFocus else { return }
-            focusFollowUpInput()
-        }
-        .onChange(of: viewModel.isLoading) { _, isLoading in
-            guard !isLoading, shouldShowFollowUpInput else { return }
-            focusFollowUpInput()
-        }
-        .onChange(of: viewModel.resultText) { _, _ in
-            guard shouldShowFollowUpInput else { return }
-            focusFollowUpInput()
-        }
-        .onChange(of: viewModel.followUpFocusRequestID) { _, _ in
-            guard shouldShowFollowUpInput else { return }
-            focusFollowUpInput()
         }
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -660,8 +634,7 @@ struct ResultContentView: View {
             }
 
             // Action bar (only if the plugin has at least one action enabled)
-            if !viewModel.isLoading && viewModel.errorMessage == nil && !viewModel.resultText.isEmpty,
-               let actions = viewModel.currentPlugin?.enabledActions, !actions.isEmpty {
+            if viewModel.isGenerating || viewModel.errorMessage != nil || !viewModel.resultText.isEmpty {
                 actionBar
             }
         }
@@ -845,7 +818,7 @@ struct ResultContentView: View {
     private var shouldShowFollowUpInput: Bool {
         guard let plugin = viewModel.currentPlugin else { return false }
         return plugin.enabledActions.contains(.followUp) &&
-            !viewModel.isLoading &&
+            !viewModel.isGenerating &&
             viewModel.errorMessage == nil &&
             !viewModel.resultText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -884,11 +857,6 @@ struct ResultContentView: View {
         viewModel.submitFollowUp(text)
     }
 
-    private func focusFollowUpInput() {
-        isFollowUpFocused = true
-        onFocusFollowUpRequested()
-    }
-
     // MARK: - Action Bar
 
     private var actionBar: some View {
@@ -900,23 +868,27 @@ struct ResultContentView: View {
 
             HStack(spacing: 2) {
                 if actions.contains(.copy) {
-                    // Intentionally no Cmd+C shortcut here — Cmd+C is handled
-                    // by KeyableResultPanel.performKeyEquivalent so that
-                    // selecting part of the result and pressing Cmd+C copies
-                    // only the selection (native behavior). When no text is
-                    // selected, that override falls back to copyResult().
                     ActionChip(title: UIString("Copy"), icon: "doc.on.doc") {
                         viewModel.copyResult()
                     }
+                    .disabled(viewModel.resultText.isEmpty)
+                    .help(UIString("Copy All (⇧⌘C)"))
                 }
                 if actions.contains(.insert) {
                     ActionChip(title: UIString("Insert"), icon: "text.insert", shortcut: "i") {
                         viewModel.insertResult()
                     }
+                    .disabled(viewModel.isGenerating || viewModel.isPasting || viewModel.resultText.isEmpty)
                 }
                 if actions.contains(.replace) {
                     ActionChip(title: UIString("Replace"), icon: "arrow.2.squarepath", shortcut: "r") {
                         viewModel.replaceResult()
+                    }
+                    .disabled(viewModel.isGenerating || viewModel.isPasting || viewModel.resultText.isEmpty)
+                }
+                if viewModel.isGenerating {
+                    ActionChip(title: UIString("Stop"), icon: "stop.fill") {
+                        viewModel.cancelStream()
                     }
                 }
                 if actions.contains(.regenerate) {
