@@ -31,6 +31,7 @@
 		A10026 /* LocalActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10026 /* LocalActionExecutor.swift */; };
 		A10027 /* ScreenLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10027 /* ScreenLocator.swift */; };
 		A10028 /* AXSelectionReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10028 /* AXSelectionReader.swift */; };
+		A10029 /* SelectionEventMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10029 /* SelectionEventMonitor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -61,6 +62,7 @@
 		B10026 /* LocalActionExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalActionExecutor.swift; sourceTree = "<group>"; };
 		B10027 /* ScreenLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenLocator.swift; sourceTree = "<group>"; };
 		B10028 /* AXSelectionReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXSelectionReader.swift; sourceTree = "<group>"; };
+		B10029 /* SelectionEventMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionEventMonitor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -105,6 +107,7 @@
 				B10004 /* AccessibilityMonitor.swift */,
 				B10027 /* ScreenLocator.swift */,
 				B10028 /* AXSelectionReader.swift */,
+				B10029 /* SelectionEventMonitor.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -255,6 +258,7 @@
 				A10026 /* LocalActionExecutor.swift in Sources */,
 				A10027 /* ScreenLocator.swift in Sources */,
 				A10028 /* AXSelectionReader.swift in Sources */,
+				A10029 /* SelectionEventMonitor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -374,7 +378,7 @@
 					CODE_SIGN_ENTITLEMENTS = PickLingo/SelectTranslate.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 502;
+				CURRENT_PROJECT_VERSION = 503;
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 					INFOPLIST_FILE = PickLingo/Info.plist;
@@ -384,7 +388,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.5.2;
+				MARKETING_VERSION = 0.5.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.picklingo.app;
 				PRODUCT_NAME = PickLingo;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -399,7 +403,7 @@
 					CODE_SIGN_ENTITLEMENTS = PickLingo/SelectTranslate.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 502;
+				CURRENT_PROJECT_VERSION = 503;
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 					INFOPLIST_FILE = PickLingo/Info.plist;
@@ -409,7 +413,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.5.2;
+				MARKETING_VERSION = 0.5.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.picklingo.app;
 				PRODUCT_NAME = PickLingo;
 				SWIFT_EMIT_LOC_STRINGS = YES;

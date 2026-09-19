@@ -1,6 +1,27 @@
 import Cocoa
 import ApplicationServices
 
+struct SelectionSnapshot: Sendable {
+    let text: String
+    var accessibilityBounds: CGRect? = nil
+}
+
+enum SelectionTargetPolicy {
+    static let controlRoles: Set<String> = [
+        kAXButtonRole, kAXCheckBoxRole, kAXRadioButtonRole, kAXRadioGroupRole,
+        kAXPopUpButtonRole, kAXMenuButtonRole, kAXComboBoxRole,
+        kAXMenuRole, kAXMenuBarRole, kAXMenuBarItemRole, kAXMenuItemRole,
+        kAXToolbarRole, kAXScrollBarRole, kAXSliderRole, kAXIncrementorRole
+    ]
+
+    static func allowsSettingsSelection(rolePath: [String]) -> Bool {
+        guard let hit = rolePath.first,
+              [kAXStaticTextRole, kAXTextFieldRole, kAXTextAreaRole].contains(hit) else { return false }
+        // A radio/checkbox label is text, but belongs to its interactive control.
+        return rolePath.allSatisfy { !controlRoles.contains($0) }
+    }
+}
+
 /// AX calls may block when another app is busy. Keep IPC off the event/UI thread,
 /// serialize requests, and bound both the messaging timeout and traversal budget.
 enum AXSelectionReader {
@@ -34,6 +55,10 @@ enum AXSelectionReader {
     }
 
     static func selectedText(pid: pid_t, at point: CGPoint) async -> String? {
+        await selection(pid: pid, at: point)?.text
+    }
+
+    static func selection(pid: pid_t, at point: CGPoint) async -> SelectionSnapshot? {
         let operation = ReadOperation()
         return await withTaskCancellationHandler {
             guard !Task.isCancelled else { return nil }
@@ -65,7 +90,7 @@ private final class ReadOperation: @unchecked Sendable {
         return !canceled && ProcessInfo.processInfo.systemUptime < deadline
     }
 
-    func read(pid: pid_t, at point: CGPoint) -> String? {
+    func read(pid: pid_t, at point: CGPoint) -> SelectionSnapshot? {
         guard canRead else { return nil }
         deadline = ProcessInfo.processInfo.systemUptime + 0.35
         let app = AXUIElementCreateApplication(pid)
@@ -83,6 +108,27 @@ private final class ReadOperation: @unchecked Sendable {
                nonTextRoles.contains(role) { return nil }
         }
 
+        if pid == ProcessInfo.processInfo.processIdentifier {
+            // Settings must only use text under this gesture. A control click
+            // must never fall back to a previous selection in the focused field.
+            var ancestors: [AXUIElement] = []
+            var rolePath: [String] = []
+            var current = hit
+            while let element = current, ancestors.count < 12, canRead {
+                guard !ancestors.contains(where: { CFEqual($0, element) }), !isSecure(element) else { return nil }
+                let role = attribute(element, kAXRoleAttribute) as? String ?? ""
+                if role == kAXWindowRole { break }
+                ancestors.append(element)
+                rolePath.append(role)
+                current = elementAttribute(element, kAXParentAttribute)
+            }
+            guard SelectionTargetPolicy.allowsSettingsSelection(rolePath: rolePath) else { return nil }
+            for element in ancestors {
+                if let selection = snapshot(in: element) { return selection }
+            }
+            return nil
+        }
+
         // Hit text may live below the focused web area; inspect a few ancestors as well.
         // No permanent app-level failure cache: different controls expose different AX APIs.
         var candidates: [AXUIElement] = [hit, focused].compactMap { $0 }
@@ -92,17 +138,38 @@ private final class ReadOperation: @unchecked Sendable {
             let element = candidates.removeFirst()
             guard !visited.contains(where: { CFEqual($0, element) }), !isSecure(element) else { continue }
             visited.append(element)
-            if let text = selectedText(in: element), !text.isEmpty { return text }
+            if let selection = snapshot(in: element) { return selection }
             if let parent = elementAttribute(element, kAXParentAttribute) { candidates.append(parent) }
         }
         return nil
     }
 
-    private let nonTextRoles: Set<String> = [
-        kAXWindowRole, kAXButtonRole, kAXMenuBarRole, kAXMenuItemRole, kAXToolbarRole,
-        kAXScrollBarRole, kAXSliderRole, kAXCloseButtonSubrole,
+    private let nonTextRoles: Set<String> = SelectionTargetPolicy.controlRoles.union([
+        kAXWindowRole, kAXCloseButtonSubrole,
         kAXMinimizeButtonSubrole, kAXZoomButtonSubrole
-    ]
+    ])
+
+    private func snapshot(in element: AXUIElement) -> SelectionSnapshot? {
+        guard let text = selectedText(in: element), !text.isEmpty else { return nil }
+        var snapshot = SelectionSnapshot(text: text)
+        // Geometry is optional: lack of bounds must never break text detection.
+        guard canRead, let range = attribute(element, kAXSelectedTextRangeAttribute),
+              CFGetTypeID(range) == AXValueGetTypeID(),
+              AXValueGetType(unsafeBitCast(range, to: AXValue.self)) == .cfRange else { return snapshot }
+        var value: CFTypeRef?
+        guard canRead,
+              AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString,
+                                                        range, &value) == .success,
+              let value, CFGetTypeID(value) == AXValueGetTypeID() else { return snapshot }
+        let axValue = unsafeBitCast(value, to: AXValue.self)
+        var rect = CGRect.zero
+        if AXValueGetType(axValue) == .cgRect, AXValueGetValue(axValue, .cgRect, &rect),
+           !rect.isEmpty, !rect.isNull, !rect.isInfinite,
+           [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite) {
+            snapshot.accessibilityBounds = rect
+        }
+        return snapshot
+    }
 
     private func selectedText(in element: AXUIElement) -> String? {
         if let text = attribute(element, kAXSelectedTextAttribute) as? String, !text.isEmpty { return text }
@@ -123,7 +190,8 @@ private final class ReadOperation: @unchecked Sendable {
     }
 
     private func isSecure(_ element: AXUIElement) -> Bool {
-        attribute(element, kAXSubroleAttribute) as? String == kAXSecureTextFieldSubrole
+        attribute(element, kAXSubroleAttribute) as? String == kAXSecureTextFieldSubrole ||
+        attribute(element, kAXIdentifierAttribute) as? String == "PickLingoSensitiveField"
     }
 
     private func elementAttribute(_ element: AXUIElement, _ name: String) -> AXUIElement? {

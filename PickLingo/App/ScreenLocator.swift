@@ -11,6 +11,38 @@ enum ScreenLocator {
         CGPoint(x: point.x, y: primaryScreenHeight - point.y)
     }
 
+    /// Quartz events and AX both use the primary display's top-left origin.
+    static func appKitPoint(for point: CGPoint, primaryScreenHeight: CGFloat? = nil) -> NSPoint {
+        let height = primaryScreenHeight ?? NSScreen.screens.first?.frame.height ?? 0
+        return NSPoint(x: point.x, y: height - point.y)
+    }
+
+    static func appKitRect(for accessibilityRect: CGRect, primaryScreenHeight: CGFloat? = nil) -> NSRect {
+        let height = primaryScreenHeight ?? NSScreen.screens.first?.frame.height ?? 0
+        return NSRect(x: accessibilityRect.minX, y: height - accessibilityRect.maxY,
+                      width: accessibilityRect.width, height: accessibilityRect.height)
+    }
+
+    /// Positions the visible toolbar surface; callers reserve space for its shadow.
+    /// The same calculation drives both the live panel and the settings preview.
+    static func toolbarFrame(for size: NSSize, selectionBounds: NSRect?, anchor: NSPoint,
+                             horizontalOffset: CGFloat, verticalGap: CGFloat,
+                             position: TooltipPosition, in visibleFrame: NSRect,
+                             inset: CGFloat = 12) -> NSRect {
+        let bounds = selectionBounds ?? NSRect(origin: anchor, size: .zero)
+        let available = visibleFrame.insetBy(dx: inset, dy: inset)
+        let below = bounds.minY - verticalGap - size.height
+        let above = bounds.maxY + verticalGap
+        let preferred = position == .below ? below : above
+        let alternative = position == .below ? above : below
+        func fits(_ y: CGFloat) -> Bool { y >= available.minY && y + size.height <= available.maxY }
+        let y = fits(preferred) ? preferred : (fits(alternative) ? alternative : preferred)
+        let x = bounds.midX - size.width / 2 + horizontalOffset
+        return NSRect(x: min(max(x, available.minX), max(available.minX, available.maxX - size.width)),
+                      y: min(max(y, available.minY), max(available.minY, available.maxY - size.height)),
+                      width: size.width, height: size.height)
+    }
+
     static func screen(for point: NSPoint) -> NSScreen? {
         if let containingScreen = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
             return containingScreen

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct PluginSettingsView: View {
     @ObservedObject private var pluginManager = PluginManager.shared
-    @State private var selectedPluginID: UUID?
+    @Binding var selectedPluginID: UUID?
     @State private var showingDeleteConfirmation = false
     @State private var pluginToDelete: Plugin?
 
@@ -10,7 +10,7 @@ struct PluginSettingsView: View {
         HSplitView {
             // Left: Plugin list
             pluginListView
-                .frame(minWidth: 220, idealWidth: 240, maxWidth: 280)
+                .frame(minWidth: 210, idealWidth: 230, maxWidth: 270)
 
             // Right: Edit panel
             pluginEditView
@@ -26,6 +26,12 @@ struct PluginSettingsView: View {
             HStack {
                 Text(UIString("Plugins"))
                     .font(.headline)
+                Text("\(pluginManager.plugins.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.primary.opacity(0.06), in: Capsule())
                 Spacer()
                 Button(action: addNewPlugin) {
                     Image(systemName: "plus")
@@ -33,6 +39,7 @@ struct PluginSettingsView: View {
                 }
                 .buttonStyle(.borderless)
                 .help(UIString("Add new plugin"))
+                .accessibilityLabel(UIString("Add new plugin"))
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
@@ -50,7 +57,8 @@ struct PluginSettingsView: View {
                     pluginManager.movePlugin(fromOffsets: from, toOffset: to)
                 }
             }
-            .listStyle(.sidebar)
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
 
             // Bottom bar
             HStack {
@@ -101,13 +109,19 @@ struct PluginSettingsView: View {
                 Text(UIString("This plugin will be permanently removed."))
             }
         } else {
-            VStack {
-                Spacer()
+            VStack(spacing: 14) {
+                Image(systemName: "puzzlepiece.extension")
+                    .font(.system(size: 38, weight: .light))
+                    .foregroundStyle(Color.accentColor.opacity(0.7))
                 Text(UIString("Select a plugin to edit"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                Spacer()
+                Button(action: addNewPlugin) {
+                    Label(UIString("Add new plugin"), systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -159,9 +173,11 @@ struct PluginListRow: View {
                 get: { plugin.isEnabled },
                 set: { onToggle($0) }
             ))
+            .textSelection(.disabled)
             .toggleStyle(.switch)
             .controlSize(.mini)
             .labelsHidden()
+            .accessibilityLabel(plugin.uiDisplayName)
         }
         .padding(.vertical, 2)
     }
@@ -309,6 +325,7 @@ struct PluginEditView: View {
                         Text(UIString("AI")).tag(PluginExecutionMode.ai)
                         Text(UIString("Local Action")).tag(PluginExecutionMode.localAction)
                     }
+                    .textSelection(.disabled)
                     .labelsHidden()
                     .pickerStyle(.segmented)
                     .onChange(of: plugin.executionMode) { _, newValue in
@@ -355,6 +372,7 @@ struct PluginEditView: View {
                             .foregroundStyle(.tertiary)
 
                         Toggle(UIString("Show result window"), isOn: $plugin.showResultPanel)
+                        .textSelection(.disabled)
                             .onChange(of: plugin.showResultPanel) { _, _ in onSave() }
 
                         Text(UIString("When disabled, the local action runs without opening the result window. Errors are still shown."))
@@ -362,6 +380,7 @@ struct PluginEditView: View {
                             .foregroundStyle(.tertiary)
 
                         Toggle(UIString("Requires user input"), isOn: $plugin.needsUserInput)
+                        .textSelection(.disabled)
                             .onChange(of: plugin.needsUserInput) { _, _ in onSave() }
 
                         if plugin.needsUserInput {
@@ -400,20 +419,23 @@ struct PluginEditView: View {
                             .onChange(of: plugin.prompt) { _, _ in onSave() }
 
                         // Placeholder hints
-                        HStack(spacing: 6) {
+                        VStack(alignment: .leading, spacing: 6) {
                             Text(UIString("Placeholders:"))
                                 .font(.system(size: 10))
                                 .foregroundStyle(.tertiary)
-                            PlaceholderChip("{selected_text}")
-                            PlaceholderChip("{user_input}")
-                            PlaceholderChip("{source}")
-                            PlaceholderChip("{target}")
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), alignment: .leading)], alignment: .leading, spacing: 6) {
+                                PlaceholderChip("{selected_text}")
+                                PlaceholderChip("{user_input}")
+                                PlaceholderChip("{source}")
+                                PlaceholderChip("{target}")
+                            }
                         }
                     }
 
                     // User Input toggle
                     VStack(alignment: .leading, spacing: 4) {
                         Toggle(UIString("Requires user input"), isOn: $plugin.needsUserInput)
+                        .textSelection(.disabled)
                             .onChange(of: plugin.needsUserInput) { _, _ in onSave() }
 
                         if plugin.needsUserInput {
@@ -433,6 +455,7 @@ struct PluginEditView: View {
                     // Language controls toggle
                     VStack(alignment: .leading, spacing: 4) {
                         Toggle(UIString("Show source/target language controls"), isOn: $plugin.showLanguageControls)
+                        .textSelection(.disabled)
                             .onChange(of: plugin.showLanguageControls) { _, _ in onSave() }
 
                         Text(UIString("When enabled, source and target language selectors appear in the result panel header."))
@@ -454,6 +477,7 @@ struct PluginEditView: View {
                                 onSave()
                             }
                         ))
+                        .textSelection(.disabled)
                         Toggle(UIString("Insert"), isOn: Binding(
                             get: { plugin.enabledActions.contains(.insert) },
                             set: { enabled in
@@ -462,6 +486,7 @@ struct PluginEditView: View {
                                 onSave()
                             }
                         ))
+                        .textSelection(.disabled)
                         Toggle(UIString("Replace"), isOn: Binding(
                             get: { plugin.enabledActions.contains(.replace) },
                             set: { enabled in
@@ -470,6 +495,7 @@ struct PluginEditView: View {
                                 onSave()
                             }
                         ))
+                        .textSelection(.disabled)
                         Toggle(UIString("Regenerate"), isOn: Binding(
                             get: { plugin.enabledActions.contains(.regenerate) },
                             set: { enabled in
@@ -478,6 +504,7 @@ struct PluginEditView: View {
                                 onSave()
                             }
                         ))
+                        .textSelection(.disabled)
                         Toggle(UIString("Follow-up"), isOn: Binding(
                             get: { plugin.enabledActions.contains(.followUp) },
                             set: { enabled in
@@ -486,6 +513,7 @@ struct PluginEditView: View {
                                 onSave()
                             }
                         ))
+                        .textSelection(.disabled)
 
                         Text(UIString("Choose which action buttons appear at the bottom of the result panel."))
                             .font(.caption)

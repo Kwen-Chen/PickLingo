@@ -133,6 +133,13 @@ struct UILocalizer {
     private typealias Pair = (en: String, zhHans: String)
 
     private static let manualTranslations: [String: Pair] = [
+        "Selection Monitoring": ("Selection Monitoring", "选区监听"),
+        "Selection monitoring is active.": ("Selection monitoring is active.", "选区监听已启动。"),
+        "Selection monitoring is off.": ("Selection monitoring is off.", "选区监听已关闭。"),
+        "Accessibility permission is required for text selection.": ("Accessibility permission is required for text selection.", "缺少辅助功能权限，无法读取选中文字。"),
+        "Selection monitoring could not start.": ("Selection monitoring could not start.", "选区监听启动失败，正在重试。"),
+        "Selection detection resumes automatically after Accessibility permission is granted.": ("Selection detection resumes automatically after Accessibility permission is granted.", "授予辅助功能权限后会自动恢复选区监听，无需重启应用。"),
+        "Restart Selection Monitoring": ("Restart Selection Monitoring", "重新启动选区监听"),
         "Enter an API model name.": ("Enter an API model name.", "请输入 API 模型名称。"),
         "Think Mode uses standard reasoning_effort on supported reasoning models. The service may return only the final answer.": ("Think Mode uses standard reasoning_effort on supported reasoning models. The service may return only the final answer.", "Think Mode 使用标准 reasoning_effort 参数，需要支持推理的模型。服务可能仅返回最终回答。"),
         "Enter a valid HTTP or HTTPS API base URL.": ("Enter a valid HTTP or HTTPS API base URL.", "请输入有效的 HTTP 或 HTTPS API 基础 URL。"),
@@ -153,6 +160,43 @@ struct UILocalizer {
 
         "General": ("General", "通用"),
         "Plugins": ("Plugins", "插件"),
+        "Settings": ("Settings", "设置"),
+        "Position may flip near the edge of the screen.": ("Position may flip near the edge of the screen.", "靠近屏幕边缘时会自动避让，保持工具栏完整可见。"),
+        "Reset position": ("Reset position", "重置位置"),
+        "Appearance and position update as you adjust the controls.": ("Appearance and position update as you adjust the controls.", "样式、间距和位置会随调整实时更新。"),
+        "Selected text": ("Selected text", "选中的文字"),
+        "Position preview": ("Position preview", "位置预览"),
+        "Far": ("Far", "远"),
+        "Near": ("Near", "近"),
+        "Right": ("Right", "向右"),
+        "Left": ("Left", "向左"),
+        "Vertical gap": ("Vertical gap", "垂直间距"),
+        "Horizontal offset": ("Horizontal offset", "水平偏移"),
+        "Above text": ("Above text", "文字上方"),
+        "Below text": ("Below text", "文字下方"),
+        "Toolbar position": ("Toolbar position", "弹出位置"),
+        "Close": ("Close", "关闭"),
+        "Minimize": ("Minimize", "最小化"),
+        "Window": ("Window", "窗口"),
+        "Select All": ("Select All", "全选"),
+        "Paste": ("Paste", "粘贴"),
+        "Cut": ("Cut", "剪切"),
+        "Redo": ("Redo", "重做"),
+        "Undo": ("Undo", "撤销"),
+        "Edit": ("Edit", "编辑"),
+        "Select this text to try the toolbar.": ("Select this text to try the toolbar.", "选中这段文字，试试弹出工具栏。"),
+        "Live preview": ("Live preview", "实时预览"),
+        "Icon and text": ("Icon and text", "图文卡片"),
+        "Minimal bar": ("Minimal bar", "墨色极简"),
+        "Frosted capsule": ("Frosted capsule", "磨砂胶囊"),
+        "Floating circles": ("Floating circles", "悬浮圆钮"),
+        "Plugin spacing": ("Plugin spacing", "插件间距"),
+        "Toolbar style": ("Toolbar style", "工具栏样式"),
+        "Selection Toolbar": ("Selection Toolbar", "选中工具栏"),
+        "Make PickLingo work your way.": ("Make PickLingo work your way.", "按你的习惯，调整 PickLingo。"),
+        "Customize the tools that appear when you select text.": ("Customize the tools that appear when you select text.", "定制选中文字后使用的工具。"),
+        "Show API key": ("Show API key", "显示 API 密钥"),
+        "Hide API key": ("Hide API key", "隐藏 API 密钥"),
         "General Behavior": ("General Behavior", "基本行为"),
         "Interface": ("Interface", "界面"),
         "Translation": ("Translation", "翻译"),
@@ -332,8 +376,40 @@ struct ModelProfile: Identifiable, Codable, Equatable {
     }
 }
 
+enum TooltipStyle: String, CaseIterable, Codable, Identifiable {
+    case floating, capsule, minimal, labeled
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .floating: return "Floating circles"
+        case .capsule: return "Frosted capsule"
+        case .minimal: return "Minimal bar"
+        case .labeled: return "Icon and text"
+        }
+    }
+}
+
+enum TooltipPosition: String, CaseIterable, Codable, Identifiable {
+    case below, above
+    var id: String { rawValue }
+    var title: String { self == .below ? "Below text" : "Above text" }
+}
+
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
+    static let tooltipHorizontalOffsetRange: ClosedRange<Double> = -120...120
+    static let tooltipVerticalGapRange: ClosedRange<Double> = 0...80
+    static func sanitizedTooltipHorizontalOffset(_ value: Double) -> Double {
+        value.isFinite ? min(120, max(-120, value)) : 0
+    }
+    static func sanitizedTooltipVerticalGap(_ value: Double) -> Double {
+        value.isFinite ? min(80, max(0, value)) : 12
+    }
+    static let tooltipPluginSpacingRange: ClosedRange<Double> = 0...24
+    static func sanitizedTooltipSpacing(_ value: Double) -> Double {
+        value.isFinite ? min(24, max(0, value)) : 2
+    }
     static let resultPanelFontSizeRange: ClosedRange<Double> = 11...22
     static let defaultQuickAskPrompt = """
     Answer the user's question thoughtfully and accurately.
@@ -345,6 +421,29 @@ final class AppSettings: ObservableObject {
     @Published var isEnabled: Bool = true { didSet { persistIfNeeded() } }
     @Published var autoDetectLanguage: Bool = true { didSet { persistIfNeeded() } }
     @Published var defaultTargetLanguage: Language = .chinese { didSet { persistIfNeeded() } }
+    @Published var tooltipPosition: TooltipPosition = .below { didSet { persistIfNeeded() } }
+    @Published var tooltipHorizontalOffset: Double = 0 {
+        didSet {
+            let value = Self.sanitizedTooltipHorizontalOffset(tooltipHorizontalOffset)
+            if value != tooltipHorizontalOffset { tooltipHorizontalOffset = value }
+            persistIfNeeded()
+        }
+    }
+    @Published var tooltipVerticalGap: Double = 12 {
+        didSet {
+            let value = Self.sanitizedTooltipVerticalGap(tooltipVerticalGap)
+            if value != tooltipVerticalGap { tooltipVerticalGap = value }
+            persistIfNeeded()
+        }
+    }
+    @Published var tooltipStyle: TooltipStyle = .floating { didSet { persistIfNeeded() } }
+    @Published var tooltipPluginSpacing: Double = 2 {
+        didSet {
+            let value = Self.sanitizedTooltipSpacing(tooltipPluginSpacing)
+            if value != tooltipPluginSpacing { tooltipPluginSpacing = value }
+            persistIfNeeded()
+        }
+    }
     @Published var tooltipDelay: Double = 0.0 { didSet { persistIfNeeded() } }
     @Published var apiBaseURL: String = "https://api.openai.com" { didSet { persistIfNeeded() } }
     @Published var apiModel: String = "gpt-4o-mini" { didSet { persistIfNeeded() } }
@@ -378,6 +477,11 @@ final class AppSettings: ObservableObject {
         var isEnabled: Bool
         var autoDetectLanguage: Bool
         var defaultTargetLanguage: Language
+        var tooltipPosition: TooltipPosition
+        var tooltipHorizontalOffset: Double
+        var tooltipVerticalGap: Double
+        var tooltipStyle: TooltipStyle
+        var tooltipPluginSpacing: Double
         var tooltipDelay: Double
         var apiBaseURL: String
         var apiModel: String
@@ -401,6 +505,11 @@ final class AppSettings: ObservableObject {
             isEnabled: Bool,
             autoDetectLanguage: Bool,
             defaultTargetLanguage: Language,
+            tooltipPosition: TooltipPosition,
+            tooltipHorizontalOffset: Double,
+            tooltipVerticalGap: Double,
+            tooltipStyle: TooltipStyle,
+            tooltipPluginSpacing: Double,
             tooltipDelay: Double,
             apiBaseURL: String,
             apiModel: String,
@@ -423,6 +532,11 @@ final class AppSettings: ObservableObject {
             self.isEnabled = isEnabled
             self.autoDetectLanguage = autoDetectLanguage
             self.defaultTargetLanguage = defaultTargetLanguage
+            self.tooltipPosition = tooltipPosition
+            self.tooltipHorizontalOffset = AppSettings.sanitizedTooltipHorizontalOffset(tooltipHorizontalOffset)
+            self.tooltipVerticalGap = AppSettings.sanitizedTooltipVerticalGap(tooltipVerticalGap)
+            self.tooltipStyle = tooltipStyle
+            self.tooltipPluginSpacing = AppSettings.sanitizedTooltipSpacing(tooltipPluginSpacing)
             self.tooltipDelay = tooltipDelay
             self.apiBaseURL = apiBaseURL
             self.apiModel = apiModel
@@ -450,6 +564,18 @@ final class AppSettings: ObservableObject {
             isEnabled = try c.decode(Bool.self, forKey: .isEnabled)
             autoDetectLanguage = try c.decode(Bool.self, forKey: .autoDetectLanguage)
             defaultTargetLanguage = try c.decode(Language.self, forKey: .defaultTargetLanguage)
+            tooltipPosition = (try c.decodeIfPresent(String.self, forKey: .tooltipPosition)).flatMap(TooltipPosition.init(rawValue:)) ?? .below
+            tooltipHorizontalOffset = AppSettings.sanitizedTooltipHorizontalOffset(
+                try c.decodeIfPresent(Double.self, forKey: .tooltipHorizontalOffset) ?? 0
+            )
+            tooltipVerticalGap = AppSettings.sanitizedTooltipVerticalGap(
+                try c.decodeIfPresent(Double.self, forKey: .tooltipVerticalGap) ?? 12
+            )
+            let styleName = try c.decodeIfPresent(String.self, forKey: .tooltipStyle)
+            tooltipStyle = styleName.flatMap(TooltipStyle.init(rawValue:)) ?? .floating
+            tooltipPluginSpacing = AppSettings.sanitizedTooltipSpacing(
+                try c.decodeIfPresent(Double.self, forKey: .tooltipPluginSpacing) ?? 2
+            )
             tooltipDelay = try c.decode(Double.self, forKey: .tooltipDelay)
             apiBaseURL = try c.decode(String.self, forKey: .apiBaseURL)
             apiModel = try c.decode(String.self, forKey: .apiModel)
@@ -595,6 +721,11 @@ final class AppSettings: ObservableObject {
             isEnabled: isEnabled,
             autoDetectLanguage: autoDetectLanguage,
             defaultTargetLanguage: defaultTargetLanguage,
+            tooltipPosition: tooltipPosition,
+            tooltipHorizontalOffset: tooltipHorizontalOffset,
+            tooltipVerticalGap: tooltipVerticalGap,
+            tooltipStyle: tooltipStyle,
+            tooltipPluginSpacing: tooltipPluginSpacing,
             tooltipDelay: tooltipDelay,
             apiBaseURL: apiBaseURL,
             apiModel: apiModel,
@@ -637,6 +768,11 @@ final class AppSettings: ObservableObject {
             isEnabled = persisted.isEnabled
             autoDetectLanguage = persisted.autoDetectLanguage
             defaultTargetLanguage = persisted.defaultTargetLanguage
+            tooltipPosition = persisted.tooltipPosition
+            tooltipHorizontalOffset = persisted.tooltipHorizontalOffset
+            tooltipVerticalGap = persisted.tooltipVerticalGap
+            tooltipStyle = persisted.tooltipStyle
+            tooltipPluginSpacing = persisted.tooltipPluginSpacing
             tooltipDelay = persisted.tooltipDelay
             apiBaseURL = persisted.apiBaseURL
             apiModel = persisted.apiModel

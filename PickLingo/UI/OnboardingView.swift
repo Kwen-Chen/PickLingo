@@ -27,8 +27,7 @@ struct OnboardingView: View {
                     .font(.headline)
             } else {
                 Button(String(localized: "Open Accessibility Settings")) {
-                    let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-                    NSWorkspace.shared.open(url)
+                    AccessibilityMonitor.shared.requestAccessibility()
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -49,8 +48,14 @@ struct OnboardingView: View {
         }
         .padding(32)
         .frame(width: 440, height: 320)
+        .onAppear {
+            if isGranted { onComplete() }
+        }
         .onReceive(timer) { _ in
-            isGranted = AXIsProcessTrusted()
+            let granted = AXIsProcessTrusted()
+            guard granted != isGranted else { return }
+            isGranted = granted
+            if granted { onComplete() }
         }
     }
 }

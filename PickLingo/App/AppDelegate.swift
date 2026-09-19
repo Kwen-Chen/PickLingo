@@ -6,7 +6,7 @@ import Carbon.HIToolbox
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let menuBarController = MenuBarController()
-    let accessibilityMonitor = AccessibilityMonitor()
+    let accessibilityMonitor = AccessibilityMonitor.shared
     private var tooltipPanel: TooltipPanel?
     private var resultPanel: ResultPanelController?
     private var userInputPanel: UserInputPanelController?
@@ -15,8 +15,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appSwitchObserver: Any?
     private var themeCancellable: AnyCancellable?
     private var settingsCancellables = Set<AnyCancellable>()
-    private var quickAskFlagsMonitor: Any?
-    private var quickAskKeyDownMonitor: Any?
     private var quickAskLocalFlagsMonitor: Any?
     private var quickAskLocalKeyDownMonitor: Any?
     private var commandTapInProgress = false
@@ -33,16 +31,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[PickLingo] App launched")
+        setupApplicationMenu()
         menuBarController.setup()
         bindThemeUpdates()
         bindBehaviorUpdates()
-        setupQuickAskMonitoring()
+        startMonitoring()
 
         let granted = accessibilityMonitor.isAccessibilityGranted
         print("[PickLingo] Accessibility granted: \(granted)")
-        if granted {
-            scheduleStartMonitoring()
-        } else {
+        if !granted {
             showOnboarding()
         }
     }
@@ -57,15 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         menuBarController.ensureVisible()
-    }
-
-    private func scheduleStartMonitoring(delay: TimeInterval = 0.4) {
-        Task { @MainActor in
-            // TCC permission flips can be slightly delayed after user grants access.
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard self.accessibilityMonitor.isAccessibilityGranted else { return }
-            self.startMonitoring()
-        }
+        accessibilityMonitor.refreshMonitoring(restart: true)
     }
 
     func startMonitoring() {
@@ -84,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         accessibilityMonitor.onSelectionCleared = { [weak self] in
             let ownPID = ProcessInfo.processInfo.processIdentifier
             if NSWorkspace.shared.frontmostApplication?.processIdentifier == ownPID {
+                self?.hideTooltip()
                 return
             }
             self?.hideAll()
@@ -131,14 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func removeQuickAskMonitors() {
-        if let monitor = quickAskFlagsMonitor {
-            NSEvent.removeMonitor(monitor)
-            quickAskFlagsMonitor = nil
-        }
-        if let monitor = quickAskKeyDownMonitor {
-            NSEvent.removeMonitor(monitor)
-            quickAskKeyDownMonitor = nil
-        }
+        accessibilityMonitor.onGlobalKeyEvent = nil
         if let monitor = quickAskLocalFlagsMonitor {
             NSEvent.removeMonitor(monitor)
             quickAskLocalFlagsMonitor = nil
@@ -152,13 +135,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupQuickAskMonitoring() {
         removeQuickAskMonitors()
         resetCommandTapState()
-        guard AppSettings.shared.isEnabled, AppSettings.shared.quickAskEnabled else { return }
+        guard AppSettings.shared.isEnabled, AppSettings.shared.quickAskEnabled,
+              accessibilityMonitor.monitoringState == .active else { return }
 
-        quickAskFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handleQuickAskFlagsChanged(event)
-        }
-        quickAskKeyDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handleQuickAskKeyDown(event)
+        accessibilityMonitor.onGlobalKeyEvent = { [weak self] event in
+            if event.type == .flagsChanged {
+                self?.handleQuickAskFlagsChanged(event)
+            } else {
+                self?.handleQuickAskKeyDown(event)
+            }
         }
 
         quickAskLocalFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
@@ -192,6 +177,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Save state for later plugin execution
         pendingSelectedText = text
         pendingOrigin = origin
+        if NSApp.keyWindow?.identifier == AccessibilityMonitor.settingsWindowIdentifier,
+           NSApp.isActive {
+            // Never send Insert/Replace to the previously used external app
+            // when the selection actually came from our settings window.
+            lastActiveAppPID = ProcessInfo.processInfo.processIdentifier
+        }
 
         userInputPanel?.dismiss()
 
@@ -204,7 +195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.handlePluginSelected(plugin)
         }
 
-        tooltipPanel?.show(at: origin)
+        tooltipPanel?.show(at: origin, selectionBounds: accessibilityMonitor.selectionBounds)
     }
 
     private func hideTooltip() {
@@ -516,6 +507,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func bindBehaviorUpdates() {
+        AppSettings.shared.$interfaceLanguage.removeDuplicates().dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.setupApplicationMenu()
+                self?.settingsWindow?.title = UIString("PickLingo Settings")
+            }.store(in: &settingsCancellables)
+        accessibilityMonitor.$monitoringState.removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.setupQuickAskMonitoring() }
+            .store(in: &settingsCancellables)
         AppSettings.shared.$isEnabled.removeDuplicates().dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] enabled in
@@ -543,6 +544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Toggle(.switch) thumbs measured at zero width. NSApp.activate()
         // is asynchronous, so we activate first, then defer the actual
         // window display to the next runloop tick once the app is stable.
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
         if let window = settingsWindow {
@@ -555,14 +557,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let settingsView = SettingsView()
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
+        let window = SettingsWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 960, height: 700),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: true
         )
         window.title = UIString("PickLingo Settings")
-        window.minSize = NSSize(width: 640, height: 420)
+        window.identifier = AccessibilityMonitor.settingsWindowIdentifier
+        window.contentMinSize = NSSize(width: 860, height: 560)
         window.appearance = AppSettings.shared.appTheme.nsAppearance
         window.contentView = NSHostingView(rootView: settingsView)
         window.center()
@@ -571,9 +574,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow = window
 
         DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             window.makeFirstResponder(nil)
         }
+    }
+
+    private func setupApplicationMenu() {
+        let main = NSMenu()
+        let appMenu = NSMenu(title: "PickLingo")
+        appMenu.addItem(withTitle: UIString("Settings…"), action: #selector(openSettings), keyEquivalent: ",")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: UIString("Quit PickLingo"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let appItem = NSMenuItem()
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+
+        // Native responder-chain actions preserve selection and work in both
+        // SwiftUI selectable text and AppKit field editors without copying twice.
+        let editMenu = NSMenu(title: UIString("Edit"))
+        for (title, action, key) in [("Undo", "undo:", "z"), ("Redo", "redo:", "Z"),
+                                     ("Cut", "cut:", "x"), ("Copy", "copy:", "c"),
+                                     ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")] {
+            editMenu.addItem(withTitle: UIString(title), action: Selector(action), keyEquivalent: key)
+        }
+        let editItem = NSMenuItem(title: UIString("Edit"), action: nil, keyEquivalent: "")
+        editItem.submenu = editMenu
+        main.addItem(editItem)
+        let windowMenu = NSMenu(title: UIString("Window"))
+        windowMenu.addItem(withTitle: UIString("Minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: UIString("Close"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let windowItem = NSMenuItem(title: UIString("Window"), action: nil, keyEquivalent: "")
+        windowItem.submenu = windowMenu
+        main.addItem(windowItem)
+        NSApp.mainMenu = main
+        NSApp.windowsMenu = windowMenu
     }
 
     private func showOnboarding() {
@@ -587,7 +622,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let onboardingView = OnboardingView {
             if self.accessibilityMonitor.isAccessibilityGranted {
                 self.onboardingWindow?.close()
-                self.scheduleStartMonitoring()
+                self.startMonitoring()
             }
         }
         let window = NSWindow(
@@ -602,9 +637,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         window.isReleasedWhenClosed = false
         window.delegate = self
+        onboardingWindow = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        onboardingWindow = window
     }
 
     private func bindThemeUpdates() {
@@ -625,10 +660,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+private final class SettingsWindow: NSWindow {
+    override func sendEvent(_ event: NSEvent) {
+        super.sendEvent(event)
+        AccessibilityMonitor.shared.finishSettingsMouseTracking(event, in: self)
+    }
+}
+
 extension AppDelegate: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if (notification.object as? NSWindow) == settingsWindow {
             settingsWindow = nil
+            accessibilityMonitor.clearSelection()
+            NSApp.setActivationPolicy(.accessory)
         }
         if (notification.object as? NSWindow) == onboardingWindow {
             onboardingWindow = nil
