@@ -54,7 +54,11 @@ xcodebuild -project PickLingo.xcodeproj -scheme PickLingo \
 ## 已知行为边界
 
 - 自动取词仅使用辅助功能接口，不再模拟 ⌘C。某些终端界面、画布和未开放 AX 的控件需要使用“处理已复制文本”。
-- 启动、切换应用及开始选中时，会按目标应用支持的能力启用辅助功能树（包括 Chromium/Electron 的 `AXManualAccessibility`、`AXEnhancedUserInterface`），不依赖逐个添加应用白名单。首次取词遇到树尚未就绪时只重试一次；复制、输入或切换应用会取消重试。
+- 启动、切换应用及开始选中时，会按目标应用支持的能力启用辅助功能树（包括 Chromium/Electron 的 `AXManualAccessibility`、`AXEnhancedUserInterface`），不依赖逐个添加应用白名单。首次取词遇到树尚未就绪时最多再重试两次（150 ms、300 ms）；复制、输入或切换应用会取消重试。
+- 取词依次尝试 `AXSelectedText`、`AXSelectedTextRange` + `AXStringForRange`，以及网页引擎（WebKit、Chromium、Gecko，如 Zotero/Firefox/Safari）使用的 `AXSelectedTextMarkerRange`。候选元素包括松开点、按下点和焦点元素及其祖先，用于 Word 这类按段落拆分文本、焦点停在外层容器的应用。
+- 部分网页内容（如 Zotero PDF）在松开鼠标后数十毫秒才更新选区，因此读取至少延迟 120 ms；读到与上一次弹出相同的文字时会隔 150 ms 再确认一次，避免显示旧选区。
+- 在后台窗口中直接拖选时，以按下事件的目标进程判定来源应用，而不是此时尚未切换的前台应用。
+- 工具栏以松开鼠标时的指针为基准定位，选区边界仅在与指针同一行时用于修正行高。
 - 处理已复制文本是用户主动调用，独立于自动取词开关和应用黑名单；只有点击插件后才会执行处理。
 - 插入/替换将结果保留在剪贴板，不再定时恢复旧内容；第三方应用并没有统一的“粘贴读取完成”通知。
 - 插入/替换仍依赖源编辑器保留原选区，不应在结果生成期间移动源编辑器的光标后再执行替换。

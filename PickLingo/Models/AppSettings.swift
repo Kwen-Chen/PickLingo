@@ -165,6 +165,7 @@ struct UILocalizer {
         "Reset position": ("Reset position", "重置位置"),
         "Appearance and position update as you adjust the controls.": ("Appearance and position update as you adjust the controls.", "样式、间距和位置会随调整实时更新。"),
         "Selected text": ("Selected text", "选中的文字"),
+        "Offsets are measured from the pointer where you release the mouse.": ("Offsets are measured from the pointer where you release the mouse.", "偏移以松开鼠标时的指针位置为基准。"),
         "Position preview": ("Position preview", "位置预览"),
         "Far": ("Far", "远"),
         "Near": ("Near", "近"),

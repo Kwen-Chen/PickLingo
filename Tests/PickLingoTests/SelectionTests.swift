@@ -8,13 +8,14 @@ final class SelectionTests: XCTestCase {
         let selection = CGRect(x: 400, y: 300, width: 200, height: 40)
         let screen = CGRect(x: 0, y: 0, width: 1200, height: 800)
         let size = CGSize(width: 220, height: 42)
-        let below = ScreenLocator.toolbarFrame(for: size, selectionBounds: selection, anchor: .zero,
+        let pointer = CGPoint(x: 560, y: 320)
+        let below = ScreenLocator.toolbarFrame(for: size, selectionBounds: selection, anchor: pointer,
                                                horizontalOffset: 60, verticalGap: 24, position: .below, in: screen)
-        XCTAssertEqual(below.midX, selection.midX + 60)
+        XCTAssertEqual(below.midX, pointer.x + 60, "Follow the pointer, not the selection center")
         XCTAssertEqual(selection.minY - below.maxY, 24)
-        let above = ScreenLocator.toolbarFrame(for: size, selectionBounds: selection, anchor: .zero,
+        let above = ScreenLocator.toolbarFrame(for: size, selectionBounds: selection, anchor: pointer,
                                                horizontalOffset: -60, verticalGap: 0, position: .above, in: screen)
-        XCTAssertEqual(above.midX, selection.midX - 60)
+        XCTAssertEqual(above.midX, pointer.x - 60)
         XCTAssertEqual(above.minY, selection.maxY)
     }
 
@@ -35,10 +36,27 @@ final class SelectionTests: XCTestCase {
                                                anchor: anchor, horizontalOffset: -30, verticalGap: 12,
                                                position: .below, in: CGRect(x: 0, y: 0, width: 1200, height: 800))
         XCTAssertEqual(frame.midX, 470)
-        XCTAssertEqual(frame.maxY, 388)
+        XCTAssertEqual(frame.maxY, 378, "Clear the pointer's line, then apply the gap")
         XCTAssertEqual(ScreenLocator.appKitRect(for: CGRect(x: -600, y: -100, width: 120, height: 40),
                                                 primaryScreenHeight: 900),
                        CGRect(x: -600, y: 960, width: 120, height: 40))
+    }
+
+    func testMultilineOrMisreportedSelectionBoundsDoNotPullToolbarAwayFromPointer() {
+        let screen = CGRect(x: 0, y: 0, width: 1600, height: 1000)
+        let size = CGSize(width: 200, height: 42)
+        // Dragged downward over several lines; the gesture ended on the last line.
+        let paragraph = CGRect(x: 200, y: 300, width: 900, height: 300)
+        let pointer = CGPoint(x: 420, y: 310)
+        let frame = ScreenLocator.toolbarFrame(for: size, selectionBounds: paragraph, anchor: pointer,
+                                               horizontalOffset: 0, verticalGap: 8, position: .below, in: screen)
+        XCTAssertEqual(frame.midX, pointer.x)
+        XCTAssertEqual(frame.maxY, pointer.y - 10 - 8)
+        // An app reported a rectangle far from where the user released the mouse.
+        let stale = CGRect(x: 1200, y: 800, width: 100, height: 20)
+        let near = ScreenLocator.toolbarFrame(for: size, selectionBounds: stale, anchor: pointer,
+                                              horizontalOffset: 0, verticalGap: 8, position: .below, in: screen)
+        XCTAssertEqual(near, frame)
     }
 
     func testSettingsControlsAndTheirTextLabelsCannotTriggerSelection() {
@@ -125,6 +143,17 @@ private actor InitializingSelectionReader {
     }
 }
 
+private actor SequenceSelectionReader {
+    private var texts: [String?]
+
+    init(_ texts: [String?]) { self.texts = texts }
+
+    func read() -> SelectionSnapshot? {
+        let text = texts.count > 1 ? texts.removeFirst() : texts.first ?? nil
+        return text.map { SelectionSnapshot(text: $0) }
+    }
+}
+
 extension SelectionTests {
     @MainActor
     func testFirstGestureCanWaitForAccessibilityTreeInitialization() async throws {
@@ -177,10 +206,38 @@ extension SelectionTests {
         for _ in 0..<2 {
             delivery.schedule(pid: 42, at: .zero, delay: 0, frontmostPID: { 42 },
                               read: { _, _ in SelectionSnapshot(text: "  selected code\n") }) { detected.append($0.text) }
-            try await Task.sleep(for: .milliseconds(20))
+            try await Task.sleep(for: .milliseconds(250)) // A repeat is confirmed once before it is shown.
             delivery.cancel()
         }
         XCTAssertEqual(detected, ["  selected code\n", "  selected code\n"])
+    }
+
+    @MainActor
+    func testLatePublishedSelectionReplacesThePreviousOne() async throws {
+        let delivery = SelectionDelivery()
+        var detected: [String] = []
+        delivery.schedule(pid: 42, at: .zero, delay: 0, frontmostPID: { 42 },
+                          read: { _, _ in SelectionSnapshot(text: "first") }) { detected.append($0.text) }
+        try await Task.sleep(for: .milliseconds(20))
+        // Zotero's PDF reader still reports the old selection right after mouseUp.
+        let reader = SequenceSelectionReader(["first", "second"])
+        delivery.schedule(pid: 42, at: .zero, delay: 0, frontmostPID: { 42 },
+                          read: { _, _ in await reader.read() }) { detected.append($0.text) }
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertEqual(detected, ["first", "second"])
+    }
+
+    @MainActor
+    func testSelectionPublishedAfterSlowInitializationIsStillDelivered() async throws {
+        let delivery = SelectionDelivery()
+        let reader = SequenceSelectionReader([nil, nil, "slow app text"])
+        let delivered = expectation(description: "third attempt delivered")
+        delivery.schedule(pid: 42, at: .zero, delay: 0, frontmostPID: { 42 },
+                          read: { _, _ in await reader.read() }) { selection in
+            XCTAssertEqual(selection.text, "slow app text")
+            delivered.fulfill()
+        }
+        await fulfillment(of: [delivered], timeout: 2)
     }
 
     @MainActor

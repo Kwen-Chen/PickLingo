@@ -58,12 +58,14 @@ enum AXSelectionReader {
         await selection(pid: pid, at: point)?.text
     }
 
-    static func selection(pid: pid_t, at point: CGPoint) async -> SelectionSnapshot? {
+    /// `start` is where the gesture began. Apps that split text into many
+    /// elements (Word paragraphs) can leave the release point over a margin.
+    static func selection(pid: pid_t, at point: CGPoint, from start: CGPoint? = nil) async -> SelectionSnapshot? {
         let operation = ReadOperation()
         return await withTaskCancellationHandler {
             guard !Task.isCancelled else { return nil }
             return await withCheckedContinuation { continuation in
-                queue.async { continuation.resume(returning: operation.read(pid: pid, at: point)) }
+                queue.async { continuation.resume(returning: operation.read(pid: pid, at: point, from: start)) }
             }
         } onCancel: {
             operation.cancel()
@@ -90,7 +92,7 @@ private final class ReadOperation: @unchecked Sendable {
         return !canceled && ProcessInfo.processInfo.systemUptime < deadline
     }
 
-    func read(pid: pid_t, at point: CGPoint) -> SelectionSnapshot? {
+    func read(pid: pid_t, at point: CGPoint, from start: CGPoint?) -> SelectionSnapshot? {
         guard canRead else { return nil }
         deadline = ProcessInfo.processInfo.systemUptime + 0.35
         let app = AXUIElementCreateApplication(pid)
@@ -129,11 +131,17 @@ private final class ReadOperation: @unchecked Sendable {
             return nil
         }
 
+        var startHit: AXUIElement?
+        if let start, hypot(start.x - point.x, start.y - point.y) > 3, canRead {
+            AXUIElementCopyElementAtPosition(app, Float(start.x), Float(start.y), &startHit)
+            if let element = startHit, isSecure(element) { return nil }
+        }
+
         // Hit text may live below the focused web area; inspect a few ancestors as well.
         // No permanent app-level failure cache: different controls expose different AX APIs.
-        var candidates: [AXUIElement] = [hit, focused].compactMap { $0 }
+        var candidates: [AXUIElement] = [hit, startHit, focused].compactMap { $0 }
         var visited: [AXUIElement] = []
-        while !candidates.isEmpty, visited.count < 8,
+        while !candidates.isEmpty, visited.count < 12,
               canRead {
             let element = candidates.removeFirst()
             guard !visited.contains(where: { CFEqual($0, element) }), !isSecure(element) else { continue }
@@ -150,25 +158,42 @@ private final class ReadOperation: @unchecked Sendable {
     ])
 
     private func snapshot(in element: AXUIElement) -> SelectionSnapshot? {
-        guard let text = selectedText(in: element), !text.isEmpty else { return nil }
+        guard let text = selectedText(in: element), !text.isEmpty else { return markerSnapshot(in: element) }
         var snapshot = SelectionSnapshot(text: text)
         // Geometry is optional: lack of bounds must never break text detection.
         guard canRead, let range = attribute(element, kAXSelectedTextRangeAttribute),
               CFGetTypeID(range) == AXValueGetTypeID(),
               AXValueGetType(unsafeBitCast(range, to: AXValue.self)) == .cfRange else { return snapshot }
-        var value: CFTypeRef?
-        guard canRead,
-              AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString,
-                                                        range, &value) == .success,
-              let value, CFGetTypeID(value) == AXValueGetTypeID() else { return snapshot }
+        snapshot.accessibilityBounds = rect(parameterizedAttribute(element, kAXBoundsForRangeParameterizedAttribute, range))
+        return snapshot
+    }
+
+    /// Web content in Gecko (Firefox, Zotero) and WebKit exposes non-editable
+    /// selections only as text markers, without AXSelectedText or a CFRange.
+    private func markerSnapshot(in element: AXUIElement) -> SelectionSnapshot? {
+        guard let range = attribute(element, "AXSelectedTextMarkerRange"),
+              let text = parameterizedAttribute(element, "AXStringForTextMarkerRange", range) as? String,
+              !text.isEmpty, text.count <= 100_000 else { return nil }
+        return SelectionSnapshot(text: text,
+                                 accessibilityBounds: rect(parameterizedAttribute(element, "AXBoundsForTextMarkerRange", range)))
+    }
+
+    private func rect(_ value: CFTypeRef?) -> CGRect? {
+        guard let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         let axValue = unsafeBitCast(value, to: AXValue.self)
         var rect = CGRect.zero
-        if AXValueGetType(axValue) == .cgRect, AXValueGetValue(axValue, .cgRect, &rect),
-           !rect.isEmpty, !rect.isNull, !rect.isInfinite,
-           [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite) {
-            snapshot.accessibilityBounds = rect
-        }
-        return snapshot
+        guard AXValueGetType(axValue) == .cgRect, AXValueGetValue(axValue, .cgRect, &rect),
+              !rect.isEmpty, !rect.isNull, !rect.isInfinite,
+              [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite) else { return nil }
+        return rect
+    }
+
+    private func parameterizedAttribute(_ element: AXUIElement, _ name: String, _ parameter: CFTypeRef) -> CFTypeRef? {
+        guard canRead else { return nil }
+        var value: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &value) == .success
+        else { return nil }
+        return value
     }
 
     private func selectedText(in element: AXUIElement) -> String? {

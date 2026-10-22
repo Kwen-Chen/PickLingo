@@ -171,6 +171,9 @@ private struct TooltipAppearanceSettings: View {
                     ToolbarPositionPreview(style: settings.tooltipStyle, spacing: settings.tooltipPluginSpacing,
                                            horizontalOffset: settings.tooltipHorizontalOffset,
                                            verticalGap: settings.tooltipVerticalGap, position: settings.tooltipPosition)
+                    Text(UIString("Offsets are measured from the pointer where you release the mouse."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Text(UIString("Appearance and position update as you adjust the controls."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -286,6 +289,7 @@ struct ToolbarPositionPreview: View {
                     .background(Color.accentColor.opacity(0.17), in: RoundedRectangle(cornerRadius: 4))
                 TooltipBarView(plugins: Array(Plugin.defaultPlugins.prefix(4)), style: style, spacing: spacing,
                                maximumWidth: max(80, proxy.size.width - 32), onSelect: { _ in })
+                PreviewPointer()
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
@@ -313,21 +317,55 @@ private struct ToolbarPreviewLayout: Layout {
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        guard subviews.count == 2 else { return }
+        guard subviews.count == 3 else { return }
+        // The selection ends where the mouse is released, at the preview's center,
+        // so offsets in either direction stay visible relative to the pointer.
         let textSize = subviews[0].sizeThatFits(.unspecified)
-        let selection = CGRect(x: bounds.width / 2 - textSize.width / 2, y: bounds.height / 2 - textSize.height / 2,
+        let pointer = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
+        let selection = CGRect(x: pointer.x - textSize.width, y: pointer.y - textSize.height / 2,
                                width: textSize.width, height: textSize.height)
         let toolbarSize = subviews[1].sizeThatFits(.unspecified)
         let toolbar = ScreenLocator.toolbarFrame(
-            for: toolbarSize, selectionBounds: selection, anchor: CGPoint(x: selection.midX, y: selection.midY),
+            for: toolbarSize, selectionBounds: selection, anchor: pointer,
             horizontalOffset: horizontalOffset, verticalGap: verticalGap, position: position,
             in: CGRect(origin: .zero, size: bounds.size)
         )
+        // The arrow's tip sits at the top-left corner of its frame.
+        let pointerSize = subviews[2].sizeThatFits(.unspecified)
+        let cursor = CGRect(x: pointer.x, y: pointer.y - pointerSize.height,
+                            width: pointerSize.width, height: pointerSize.height)
         // Convert shared bottom-left placement coordinates to SwiftUI's top-left.
-        for (index, frame) in [selection, toolbar].enumerated() {
+        for (index, frame) in [selection, toolbar, cursor].enumerated() {
             subviews[index].place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + bounds.height - frame.maxY),
                                   anchor: .topLeading, proposal: ProposedViewSize(frame.size))
         }
+    }
+}
+
+/// A standard macOS arrow cursor marking where the selection gesture ended.
+private struct PreviewPointer: View {
+    var body: some View {
+        PointerArrow()
+            .fill(Color.black)
+            .overlay { PointerArrow().stroke(Color.white, style: StrokeStyle(lineWidth: 1.2, lineJoin: .round)) }
+            .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+            .frame(width: 13, height: 20)
+    }
+}
+
+private struct PointerArrow: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width, h = rect.height
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + h * 0.78))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.27, y: rect.minY + h * 0.6))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.48, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.66, y: rect.minY + h * 0.92))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.46, y: rect.minY + h * 0.56))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + h * 0.56))
+        path.closeSubpath()
+        return path
     }
 }
 

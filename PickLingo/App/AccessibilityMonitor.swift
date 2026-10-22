@@ -150,21 +150,26 @@ final class AccessibilityMonitor: ObservableObject {
         case .leftMouseDown:
             logger.debug("Selection mouse down received")
             clearSelection()
-            guard let app = eligibleApp else { return }
+            // Pressing in a background window activates its app only after this
+            // event; the frontmost app is still the previous one. Use the target.
+            let target = event.cgEvent.map { pid_t($0.getIntegerValueField(.eventTargetUnixProcessID)) } ?? 0
+            let app = target > 0 ? NSRunningApplication(processIdentifier: target) : NSWorkspace.shared.frontmostApplication
+            guard let app, isEligible(app) else { return }
             mouseDown = (event.locationInWindow, app.processIdentifier)
             AXSelectionReader.prepare(pid: app.processIdentifier)
         case .leftMouseUp:
             logger.debug("Selection mouse up received")
             guard let down = mouseDown else { return }
             mouseDown = nil
-            guard let app = eligibleApp, down.pid == app.processIdentifier else { return }
+            // Activation may still be in flight; delivery confirms the front app before reading.
+            guard let app = NSRunningApplication(processIdentifier: down.pid), isEligible(app) else { return }
             let point = event.locationInWindow
             guard SelectionSession.isSelectionGesture(
                 from: down.point, to: point, clickCount: event.clickCount,
                 shiftPressed: event.modifierFlags.contains(.shift)
             ) else { return }
             logger.debug("Selection gesture received for process \(down.pid)")
-            readSelection(pid: down.pid, at: point)
+            readSelection(pid: down.pid, from: down.point, to: point)
         case .keyDown:
             clearSelection()
             onGlobalKeyEvent?(event)
@@ -192,7 +197,7 @@ final class AccessibilityMonitor: ObservableObject {
                                                        shiftPressed: event.modifierFlags.contains(.shift)) else { return }
             logger.debug("Selection gesture received in settings")
             // The scheduled read runs after the native control handles mouseUp.
-            readSelection(pid: pid, at: point)
+            readSelection(pid: pid, from: down.point, to: point)
         default:
             clearSelection()
         }
@@ -210,7 +215,7 @@ final class AccessibilityMonitor: ObservableObject {
                                                    clickCount: event.clickCount,
                                                    shiftPressed: event.modifierFlags.contains(.shift)) else { return }
         logger.debug("Selection tracking completed in settings")
-        readSelection(pid: down.pid, at: point)
+        readSelection(pid: down.pid, from: down.point, to: point)
     }
 
     func stopMonitoring() {
@@ -236,20 +241,26 @@ final class AccessibilityMonitor: ObservableObject {
     }
 
     private var eligibleApp: NSRunningApplication? {
-        guard isMonitoring, AppSettings.shared.isEnabled,
-              let app = NSWorkspace.shared.frontmostApplication,
-              AppSettings.shared.isAppEnabled(bundleID: app.bundleIdentifier) else { return nil }
-        if app.processIdentifier == ProcessInfo.processInfo.processIdentifier,
-           NSApp.keyWindow?.identifier != Self.settingsWindowIdentifier { return nil }
+        guard let app = NSWorkspace.shared.frontmostApplication, isEligible(app) else { return nil }
         return app
     }
 
-    private func readSelection(pid: pid_t, at point: NSPoint) {
+    private func isEligible(_ app: NSRunningApplication) -> Bool {
+        guard isMonitoring, AppSettings.shared.isEnabled,
+              AppSettings.shared.isAppEnabled(bundleID: app.bundleIdentifier) else { return false }
+        return app.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            || NSApp.keyWindow?.identifier == Self.settingsWindowIdentifier
+    }
+
+    private func readSelection(pid: pid_t, from start: NSPoint, to point: NSPoint) {
+        let gestureStart = ScreenLocator.accessibilityPoint(for: start)
         delivery.schedule(
             pid: pid, at: ScreenLocator.accessibilityPoint(for: point),
-            delay: max(0.05, min(2, AppSettings.shared.tooltipDelay)),
+            // Web content (e.g. Zotero's PDF reader) publishes a new selection a
+            // few dozen milliseconds after mouseUp; reading sooner returns the old one.
+            delay: max(0.12, min(2, AppSettings.shared.tooltipDelay)),
             frontmostPID: { [weak self] in self?.eligibleApp?.processIdentifier },
-            read: { pid, point in await AXSelectionReader.selection(pid: pid, at: point) },
+            read: { pid, point in await AXSelectionReader.selection(pid: pid, at: point, from: gestureStart) },
             onNoSelection: { [weak self] in
                 self?.logger.notice("Selection gesture had no accessible text after retry; process \(pid)")
             }
@@ -305,6 +316,7 @@ struct SelectionSession {
 final class SelectionDelivery {
     private var task: Task<Void, Never>?
     private var session = SelectionSession()
+    private var lastDelivered: (pid: pid_t, text: String)?
 
     func schedule(
         pid: pid_t, at point: CGPoint, delay: TimeInterval,
@@ -319,24 +331,41 @@ final class SelectionDelivery {
             do {
                 try await Task.sleep(for: .seconds(delay))
                 guard let self, self.session.isCurrent(request, frontmostPID: frontmostPID()) else { return }
-                // Chromium may still be publishing its AX tree on the first
-                // selection after activation. Retry once without requiring a
+                // Chromium/Gecko may still be publishing their AX trees on the
+                // first selection after activation. Retry without requiring a
                 // second gesture, and keep every attempt tied to this session.
-                for attempt in 0..<2 {
+                let retryDelays = [150, 300]
+                var repeated: SelectionSnapshot?
+                for attempt in 0...retryDelays.count {
                     try Task.checkCancellation()
                     guard self.session.isCurrent(request, frontmostPID: frontmostPID()) else { return }
                     let text = await read(pid, point)
                     try Task.checkCancellation()
                     guard self.session.isCurrent(request, frontmostPID: frontmostPID()) else { return }
                     if let text, !text.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        onText(text)
-                        return
+                        // Apps that publish a new selection late still report the
+                        // previous one. Confirm a repeat once before showing it.
+                        guard repeated == nil, attempt < retryDelays.count,
+                              self.lastDelivered?.pid == pid, self.lastDelivered?.text == text.text else {
+                            self.deliver(text, pid: pid, to: onText)
+                            return
+                        }
+                        repeated = text
                     }
-                    if attempt == 0 { try await Task.sleep(for: .milliseconds(150)) }
+                    if attempt < retryDelays.count {
+                        try await Task.sleep(for: .milliseconds(repeated == nil ? retryDelays[attempt] : 150))
+                    }
                 }
+                // Reselecting the same text is legitimate.
+                if let repeated { self.deliver(repeated, pid: pid, to: onText); return }
                 onNoSelection()
             } catch { /* Superseded by another gesture, key, app switch, or disable. */ }
         }
+    }
+
+    private func deliver(_ selection: SelectionSnapshot, pid: pid_t, to onText: (SelectionSnapshot) -> Void) {
+        lastDelivered = (pid, selection.text)
+        onText(selection)
     }
 
     func cancel() {

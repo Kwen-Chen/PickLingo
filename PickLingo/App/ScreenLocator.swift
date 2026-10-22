@@ -23,13 +23,23 @@ enum ScreenLocator {
                       width: accessibilityRect.width, height: accessibilityRect.height)
     }
 
+    /// The line under the pointer where the selection gesture ended. Selection
+    /// bounds only refine that line's height: a multi-line or misreported
+    /// rectangle must not pull the toolbar away from the pointer.
+    static func pointerLineBounds(selectionBounds: NSRect?, anchor: NSPoint, lineHeight: CGFloat = 20) -> NSRect {
+        let line = NSRect(x: anchor.x, y: anchor.y - lineHeight / 2, width: 0, height: lineHeight)
+        guard let bounds = selectionBounds, bounds.height <= lineHeight * 2,
+              anchor.y >= bounds.minY - lineHeight / 2, anchor.y <= bounds.maxY + lineHeight / 2 else { return line }
+        return NSRect(x: anchor.x, y: bounds.minY, width: 0, height: bounds.height)
+    }
+
     /// Positions the visible toolbar surface; callers reserve space for its shadow.
     /// The same calculation drives both the live panel and the settings preview.
     static func toolbarFrame(for size: NSSize, selectionBounds: NSRect?, anchor: NSPoint,
                              horizontalOffset: CGFloat, verticalGap: CGFloat,
                              position: TooltipPosition, in visibleFrame: NSRect,
                              inset: CGFloat = 12) -> NSRect {
-        let bounds = selectionBounds ?? NSRect(origin: anchor, size: .zero)
+        let bounds = pointerLineBounds(selectionBounds: selectionBounds, anchor: anchor)
         let available = visibleFrame.insetBy(dx: inset, dy: inset)
         let below = bounds.minY - verticalGap - size.height
         let above = bounds.maxY + verticalGap
