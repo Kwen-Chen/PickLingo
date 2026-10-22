@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PickLingo — 选中文字，AI 就在指尖</title>
+  <meta name="description" content="PickLingo 是为 macOS 打造的划词 AI 助手：在任意应用中选中文字，即可翻译、解释、润色、总结，或运行你自己的插件。">
+  <meta property="og:title" content="PickLingo — Select text. AI is right there.">
+  <meta property="og:description" content="A plugin-first macOS assistant that appears right where you select text.">
+  <meta property="og:image" content="assets/poster.jpg">
+  <link rel="icon" href="assets/icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="orb orb-a"></div><div class="orb orb-b"></div><div class="orb orb-c"></div>
+
+  <header class="nav">
+    <a class="logo" href="#top"><img src="assets/icon.png" alt="">PickLingo</a>
+    <nav>
+      <a href="#features" data-i18n="nav.features">功能</a>
+      <a href="#plugins" data-i18n="nav.plugins">自定义插件</a>
+      <a href="#privacy" data-i18n="nav.privacy">隐私</a>
+      <a href="#install" data-i18n="nav.install">安装</a>
+      <a href="https://github.com/Kwen-Chen/PickLingo" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+    <button class="lang" id="lang-toggle" aria-label="Switch language">EN</button>
+  </header>
+
+  <main id="top">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="badge reveal"><span class="dot"></span><span data-i18n="hero.badge">v0.5.4 现已发布 · 免费开源</span></div>
+      <h1 class="reveal" data-i18n="hero.title">选中文字，<br><span class="grad">AI 就在指尖</span></h1>
+      <p class="lead reveal" data-i18n="hero.lead">PickLingo 是为 macOS 打造的划词 AI 助手。在任意应用中选中文字，工具栏就出现在鼠标旁边：翻译、解释、润色、总结，或运行你自己的插件。</p>
+      <div class="cta reveal">
+        <a class="btn primary" href="https://github.com/Kwen-Chen/PickLingo/releases/latest/download/PickLingo-Beta-macOS-universal.dmg">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M4 19h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span data-i18n="hero.download">免费下载 macOS 版</span>
+        </a>
+        <a class="btn ghost" href="https://github.com/Kwen-Chen/PickLingo" target="_blank" rel="noopener" data-i18n="hero.source">查看源码</a>
+      </div>
+      <p class="meta reveal" data-i18n="hero.meta">macOS 14+ · Apple Silicon 与 Intel 通用 · 支持任意 OpenAI 兼容服务</p>
+
+      <div class="device reveal">
+        <div class="device-bar"><i></i><i></i><i></i></div>
+        <video id="promo" src="assets/picklingo-promo.mp4" poster="assets/poster.jpg" autoplay muted loop playsinline preload="metadata"></video>
+        <button class="sound" id="sound" data-i18n="hero.sound">🔊 有声播放</button>
+      </div>
+    </section>
+
+    <!-- Stats strip -->
+    <section class="strip reveal">
+      <div><b data-i18n="strip.zero">0 次</b><span data-i18n="strip.zeroDesc">复制粘贴与切换窗口</span></div>
+      <div><b>5 + ∞</b><span data-i18n="strip.pluginsDesc">内置插件 + 自定义插件</span></div>
+      <div><b data-i18n="strip.apps">任意应用</b><span data-i18n="strip.appsDesc">浏览器、Office、PDF、编辑器</span></div>
+      <div><b data-i18n="strip.key">你的 Key</b><span data-i18n="strip.keyDesc">直连你选择的模型服务</span></div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="features">
+      <div class="section-head reveal">
+        <p class="eyebrow" data-i18n="features.eyebrow">核心功能</p>
+        <h2 data-i18n="features.title">读到哪里，用到哪里</h2>
+        <p data-i18n="features.lead">以下画面均为 PickLingo 在真实应用中的实际运行截图。</p>
+      </div>
+
+      <article class="feature reveal">
+        <div class="copy">
+          <span class="num">01</span>
+          <h3 data-i18n="f1.title">选中即翻译</h3>
+          <p data-i18n="f1.body">在 Chrome、Safari、Word、Zotero 等应用里划选一句话，工具栏就在松开鼠标的位置弹出。点一下“翻译”，结果流式出现，原文和译文一目了然。</p>
+          <ul>
+            <li data-i18n="f1.p1">自动识别源语言，支持切换目标语言</li>
+            <li data-i18n="f1.p2">工具栏跟随鼠标，不遮挡正在阅读的内容</li>
+          </ul>
+        </div>
+        <figure class="shot"><img src="assets/shots/02-translate.jpg" alt="在 Chrome 中翻译选中的英文句子" loading="lazy"></figure>
+      </article>
+
+      <article class="feature flip reveal">
+        <div class="copy">
+          <span class="num">02</span>
+          <h3 data-i18n="f2.title">润色，并一键替换原文</h3>
+          <p data-i18n="f2.body">写周报、写邮件时选中一段话，点“润色”得到更通顺的版本；满意就点“替换”，结果直接写回文档，不用来回复制粘贴。</p>
+          <ul>
+            <li data-i18n="f2.p1">复制、插入、替换、重新生成、追问</li>
+            <li data-i18n="f2.p2">在原生编辑器中保持你的选区</li>
+          </ul>
+        </div>
+        <div class="shot-pair">
+          <figure class="shot"><img src="assets/shots/04-polish.jpg" alt="在文本编辑中润色周报段落" loading="lazy"><figcaption data-i18n="f2.cap1">润色结果</figcaption></figure>
+          <figure class="shot"><img src="assets/shots/05-replaced.jpg" alt="润色结果已替换回文档" loading="lazy"><figcaption data-i18n="f2.cap2">一键替换后</figcaption></figure>
+        </div>
+      </article>
+
+      <article class="feature reveal">
+        <div class="copy">
+          <span class="num">03</span>
+          <h3 data-i18n="f3.title">PDF 论文，也能直接解释</h3>
+          <p data-i18n="f3.body">在“预览”或 Zotero 中读论文，遇到陌生术语直接选中并点击“解释”。结果下方还有追问输入框，可以继续深入提问。</p>
+          <ul>
+            <li data-i18n="f3.p1">支持 Web 内核与 PDF 阅读器的选区</li>
+            <li data-i18n="f3.p2">结果支持 Markdown 渲染与局部复制</li>
+          </ul>
+        </div>
+        <figure class="shot"><img src="assets/shots/07-explain.jpg" alt="在预览中解释论文术语" loading="lazy"></figure>
+      </article>
+    </section>
+
+    <!-- Custom plugins -->
+    <section id="plugins" class="plugins">
+      <div class="section-head reveal">
+        <p class="eyebrow" data-i18n="plugins.eyebrow">自定义插件</p>
+        <h2 data-i18n="plugins.title">一段提示词，<span class="grad">就是一个新工具</span></h2>
+        <p data-i18n="plugins.lead">把你每天重复的操作做成插件，它会立刻出现在选中工具栏里。下面用 30 秒做一个“回复邮件”插件。</p>
+      </div>
+
+      <div class="steps reveal">
+        <figure class="step-card">
+          <span class="step-no">1</span>
+          <img src="assets/shots/12-custom-plugin.jpg" alt="在设置中创建回复邮件插件" loading="lazy">
+          <figcaption><b data-i18n="ps1.title">新建插件</b><span data-i18n="ps1.body">命名、选图标、写提示词，勾选“需要用户输入”。</span></figcaption>
+        </figure>
+        <figure class="step-card">
+          <span class="step-no">2</span>
+          <img src="assets/shots/13b-plugin-input.jpg" alt="选中邮件后输入回复要点" loading="lazy">
+          <figcaption><b data-i18n="ps2.title">选中邮件，写下要点</b><span data-i18n="ps2.body">新插件已出现在工具栏，点击后先输入你的回复要点。</span></figcaption>
+        </figure>
+        <figure class="step-card">
+          <span class="step-no">3</span>
+          <img src="assets/shots/14-plugin-result.jpg" alt="生成的英文邮件回复" loading="lazy">
+          <figcaption><b data-i18n="ps3.title">得到得体的回复</b><span data-i18n="ps3.body">中文要点 + 英文原信，生成可以直接发送的英文回复。</span></figcaption>
+        </figure>
+      </div>
+
+      <div class="plugin-grid">
+        <div class="prompt-card reveal">
+          <div class="prompt-head"><span class="pi">✎</span><b data-i18n="prompt.name">回复邮件</b><span class="tag">AI</span></div>
+          <pre><code data-i18n="prompt.code">根据我的回复要点「<em>{user_input}</em>」，用得体、简洁的英文回复下面这封邮件，只输出正文：<em>{selected_text}</em></code></pre>
+          <div class="chips"><span>{selected_text}</span><span>{user_input}</span><span>{source}</span><span>{target}</span></div>
+        </div>
+        <div class="caps reveal">
+          <div class="cap"><h4 data-i18n="cap1.t">两种执行方式</h4><p data-i18n="cap1.b">AI 插件调用模型；本地命令插件运行 Shell 命令，例如用选中的路径打开文件夹、拿选中的词去搜索。</p></div>
+          <div class="cap"><h4 data-i18n="cap2.t">占位符</h4><p data-i18n="cap2.b">{selected_text} 选中内容、{user_input} 补充输入、{source}/{target} 语言，自动转义，命令更安全。</p></div>
+          <div class="cap"><h4 data-i18n="cap3.t">按需交互</h4><p data-i18n="cap3.b">可要求先输入补充信息，可显示语言切换，也可自选结果面板上的复制、插入、替换、追问等按钮。</p></div>
+          <div class="cap"><h4 data-i18n="cap4.t">排序与开关</h4><p data-i18n="cap4.b">拖动调整顺序，随时启用或停用；内置插件的提示词同样可以修改。</p></div>
+        </div>
+      </div>
+
+      <div class="ideas reveal">
+        <p data-i18n="ideas.title">更多灵感：</p>
+        <span data-i18n="ideas.1">提取待办</span><span data-i18n="ideas.2">代码解释</span><span data-i18n="ideas.3">学术检索</span><span data-i18n="ideas.4">术语卡片</span><span data-i18n="ideas.5">改写成商务英语</span><span data-i18n="ideas.6">生成 Git 提交信息</span><span data-i18n="ideas.7">在终端中打开路径</span>
+      </div>
+    </section>
+
+    <!-- Quick ask + styles -->
+    <section class="duo">
+      <article class="duo-card reveal">
+        <span class="kbd">⌘ ⌘</span>
+        <h3 data-i18n="qa.title">双击 ⌘，随时提问</h3>
+        <p data-i18n="qa.body">不需要选中文字，在任何地方双击 Command，输入问题即可得到回答，并能继续追问。</p>
+        <figure class="shot"><img src="assets/shots/09-quickask.jpg" alt="双击 Command 快速提问" loading="lazy"></figure>
+      </article>
+      <article class="duo-card reveal">
+        <span class="kbd">◐</span>
+        <h3 data-i18n="st.title">四种样式，位置随心调整</h3>
+        <p data-i18n="st.body">悬浮圆钮、磨砂胶囊、墨色极简、图文卡片。工具栏以松开鼠标的位置为基准，间距与偏移实时预览。</p>
+        <figure class="shot"><img src="assets/shots/10-styles.jpg" alt="设置中的四种工具栏样式" loading="lazy"></figure>
+      </article>
+    </section>
+
+    <!-- Works with -->
+    <section class="apps reveal">
+      <p class="eyebrow" data-i18n="apps.eyebrow">兼容你常用的应用</p>
+      <div class="marquee"><div class="track">
+        <span>Google Chrome</span><span>Safari</span><span>Microsoft Word</span><span>Zotero</span><span>Preview</span><span>Visual Studio Code</span><span>TextEdit</span><span>Pages</span><span>Notes</span><span>Typora</span><span>Cursor</span><span>Firefox</span>
+        <span>Google Chrome</span><span>Safari</span><span>Microsoft Word</span><span>Zotero</span><span>Preview</span><span>Visual Studio Code</span><span>TextEdit</span><span>Pages</span><span>Notes</span><span>Typora</span><span>Cursor</span><span>Firefox</span>
+      </div></div>
+      <p class="note" data-i18n="apps.note">通过 macOS 辅助功能读取选区，支持原生控件、Chromium/Electron、WebKit 与 Gecko 内核。个别不开放选区的应用，可先复制文本，再从菜单栏选择“处理已复制文本”。</p>
+    </section>
+
+    <!-- Privacy -->
+    <section id="privacy" class="privacy">
+      <div class="section-head reveal">
+        <p class="eyebrow" data-i18n="privacy.eyebrow">隐私与可控</p>
+        <h2 data-i18n="privacy.title">你的文字，你做主</h2>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><h4 data-i18n="pv1.t">不碰剪贴板</h4><p data-i18n="pv1.b">取词只读取辅助功能接口，不模拟 ⌘C，不改写剪贴板，不干扰终端的选中即复制。</p></div>
+        <div class="card reveal"><h4 data-i18n="pv2.t">自带模型服务</h4><p data-i18n="pv2.b">使用标准 OpenAI Chat Completions 协议，可接入任意兼容服务或本地模型。配置只保存在本机，请求直接发往你填写的地址，不经过任何中转服务器。</p></div>
+        <div class="card reveal"><h4 data-i18n="pv3.t">敏感字段不读取</h4><p data-i18n="pv3.b">自动跳过密码框等安全输入区域；可将任意应用加入黑名单，重启后依然生效。</p></div>
+        <div class="card reveal"><h4 data-i18n="pv4.t">开源透明</h4><p data-i18n="pv4.b">基于 GPL-3.0 开源，所有代码都可以审阅、构建和修改。</p></div>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section id="install" class="install">
+      <div class="section-head reveal">
+        <p class="eyebrow" data-i18n="install.eyebrow">三步上手</p>
+        <h2 data-i18n="install.title">一分钟完成安装</h2>
+      </div>
+      <ol class="install-steps">
+        <li class="reveal"><b data-i18n="i1.t">下载并安装</b><p data-i18n="i1.b">打开 DMG，将 PickLingo 拖入“应用程序”。</p></li>
+        <li class="reveal"><b data-i18n="i2.t">允许打开与辅助功能</b><p data-i18n="i2.b">首次启动若被拦截，前往“系统设置 › 隐私与安全性”选择“仍要打开”；再按提示授予辅助功能权限。</p></li>
+        <li class="reveal"><b data-i18n="i3.t">填写模型服务</b><p data-i18n="i3.b">在设置中填写 API Key、Base URL 与模型名，点击“测试连接”，然后去任意应用里选中文字吧。</p></li>
+      </ol>
+      <div class="cta center reveal">
+        <a class="btn primary" href="https://github.com/Kwen-Chen/PickLingo/releases/latest/download/PickLingo-Beta-macOS-universal.dmg" data-i18n="install.download">下载 PickLingo</a>
+        <a class="btn ghost" href="https://github.com/Kwen-Chen/PickLingo/releases" target="_blank" rel="noopener" data-i18n="install.notes">更新日志</a>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="faq">
+      <div class="section-head reveal"><h2 data-i18n="faq.title">常见问题</h2></div>
+      <details class="reveal"><summary data-i18n="q1.q">PickLingo 收费吗？</summary><p data-i18n="q1.a">应用本身免费开源。AI 调用费用由你选择的模型服务决定，也可以接入本地模型。</p></details>
+      <details class="reveal"><summary data-i18n="q2.q">某个应用里选中后不弹出怎么办？</summary><p data-i18n="q2.a">先确认已授予辅助功能权限，且该应用不在黑名单中。少数应用（如部分终端、画布类应用）不开放选区，可复制文本后从菜单栏选择“处理已复制文本”。</p></details>
+      <details class="reveal"><summary data-i18n="q3.q">支持哪些模型？</summary><p data-i18n="q3.a">任何兼容 OpenAI Chat Completions 的服务，包括 HTTP/HTTPS 网关与带路径前缀的地址；可保存多个预设并随时切换，支持流式输出与 Think Mode。</p></details>
+      <details class="reveal"><summary data-i18n="q4.q">“替换”会影响我的剪贴板吗？</summary><p data-i18n="q4.a">插入与替换通过粘贴完成，结果会保留在剪贴板中，方便你再次使用；普通取词全程不会读取或改写剪贴板。</p></details>
+    </section>
+  </main>
+
+  <footer>
+    <div class="logo"><img src="assets/icon.png" alt="">PickLingo</div>
+    <p><span data-i18n="footer.text">GPL-3.0 开源 · 为 macOS 打造</span><br><small class="credit">宣传片配乐：“Wallpaper” by Kevin MacLeod (<a href="https://incompetech.com" target="_blank" rel="noopener">incompetech.com</a>)，<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></small></p>
+    <a href="https://github.com/Kwen-Chen/PickLingo" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+
+  <script src="main.js"></script>
+</body>
+</html>

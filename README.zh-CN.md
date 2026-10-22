@@ -1,6 +1,8 @@
 # PickLingo
 English documentation see [README.md](./README.md).
 
+官网：https://kwen-chen.github.io/PickLingo/ · [宣传视频](website/assets/picklingo-promo.mp4)
+
 PickLingo 是一个插件优先的 macOS 高度自定义桌面助手。
 你在支持辅助功能取词的应用里选中文本后，它会在光标附近弹出轻量提示面板，让你立即调用 AI 或本地动作插件完成处理。
 

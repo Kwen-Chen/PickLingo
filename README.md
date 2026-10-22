@@ -1,6 +1,8 @@
 # PickLingo
 中文文档，请参阅 [README.zh-CN.md](./README.zh-CN.md)。
 
+Website: https://kwen-chen.github.io/PickLingo/ · [Promo video](website/assets/picklingo-promo.mp4)
+
 
 PickLingo is a plugin-first highly customizable macOS assistant that appears right where you work.
 Select text in almost any app, trigger the floating tip panel, and run AI or local action plugins in seconds.
